@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+
+{% block title %}Usuarios | Bar{% endblock %}
+
+{% block content %}
+<section class="bar-page-header rounded-4 p-4 p-lg-5 mb-4 overflow-hidden">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 page-header-layout">
+        <div>
+            <p class="text-uppercase small mb-1 page-kicker">Seguridad</p>
+            <h1 class="page-title mb-2">Usuarios</h1>
+            <p class="page-copy mb-0">Administra accesos, roles y estado de usuarios con una vista clara para control operativo y seguridad del sistema.</p>
+        </div>
+        <div class="page-aside">
+            <a class="btn btn-dark" href="{% url 'user-create' %}">Nuevo usuario</a>
+        </div>
+    </div>
+</section>
+
+<div class="card border-0 shadow-sm rounded-4 restaurant-card table-shell">
+    <div class="card-body p-4">
+        <div class="table-responsive">
+            <table class="table align-middle">
+                <thead>
+                    <tr>
+                        <th class="text-start">Usuario</th>
+                        <th class="text-start">Nombre</th>
+                        <th class="text-center">Rol</th>
+                        <th class="text-center">Estado</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user_obj in users %}
+                    <tr>
+                        <td class="text-start">{{ user_obj.username }}</td>
+                        <td class="text-start">{{ user_obj.get_full_name|default:'-' }}</td>
+                        <td class="text-center">{{ user_obj.access_profile.get_role_display|default:'Empleado' }}</td>
+                        <td class="text-center">{% if user_obj.is_active %}Activo{% else %}Inactivo{% endif %}</td>
+                        <td class="d-flex gap-2">
+                            <a class="btn btn-sm btn-outline-secondary" href="{% url 'user-update' user_obj.pk %}">Editar</a>
+                            {% if request.user != user_obj %}
+                            <form method="post" action="{% url 'user-delete' user_obj.pk %}" onsubmit="return confirm('Se eliminara el usuario. ¿Continuar?');">
+                                {% csrf_token %}
+                                <button class="btn btn-sm btn-outline-danger" type="submit">Eliminar</button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" class="text-muted">Sin usuarios.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,409 @@
+{% extends 'base.html' %}
+
+{% block title %}Nueva Comanda | Bar{% endblock %}
+
+{% block content %}
+<section class="bar-page-header rounded-4 p-4 p-lg-5 mb-4 overflow-hidden">
+<div>
+    <p class="text-uppercase small mb-1 page-kicker">Comandas</p>
+    <h1 class="page-title mb-2">Nueva comanda</h1>
+    <p class="page-copy mb-0">Captura pedidos por mesa o comensal con una interfaz rápida para barra, piso y servicio en movimiento.</p>
+</div>
+</section>
+
+<form method="post" class="row g-4" data-ajax="true" data-follow-redirect="true">
+    {% csrf_token %}
+    <input type="hidden" name="items_json" id="itemsJsonField" value="[]">
+    <div class="col-12 col-xl-4">
+        <div class="card border-0 shadow-sm rounded-4 h-100 restaurant-card table-shell">
+            <div class="card-body p-4">
+                <h2 class="h5 mb-3">Datos generales</h2>
+                {% for field in form %}
+                <div class="mb-3">
+                    <label class="form-label">{{ field.label }}</label>
+                    {{ field }}
+                    {% if field.errors %}<div class="text-danger small mt-1">{{ field.errors|join:', ' }}</div>{% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-xl-8">
+        <div class="card border-0 shadow-sm rounded-4 restaurant-card table-shell">
+            <div class="card-body p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h2 class="h5 mb-0">Productos</h2>
+                    <button class="btn btn-dark btn-sm" type="button" id="btnOpenAddItemModal">Agregar producto</button>
+                </div>
+                <p class="text-muted small mb-3">Captura rápida para celular y tableta.</p>
+                <div class="table-responsive">
+                    <table class="table align-middle">
+                        <thead><tr><th class="text-start">Producto</th><th class="text-start">Comensal</th><th class="text-center">Variante</th><th class="text-center">Insumos</th><th class="text-center">Cantidad</th><th class="text-end">Precio</th><th class="text-end">Subtotal</th><th></th></tr></thead>
+                        <tbody id="orderItemsBody">
+                            <tr id="orderItemsEmpty"><td colspan="8" class="text-muted">Aún no agregas productos.</td></tr>
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <th colspan="6" class="text-end">Total</th>
+                                <th id="orderTotalCell">$0.00</th>
+                                <th></th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-12 d-grid d-md-flex justify-content-md-end">
+        <button class="btn btn-dark btn-lg px-5" type="submit">Guardar comanda</button>
+    </div>
+</form>
+
+<div class="modal fade" id="modalAddOrderItem" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Agregar producto a la comanda</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="formAddOrderItem" novalidate>
+                <div class="modal-body row g-3">
+                    <div class="col-12">
+                        <label class="form-label">Comensal</label>
+                        <select class="form-select" id="itemDinerSelect">
+                            <option value="__nuevo__">+ Nuevo comensal</option>
+                        </select>
+                    </div>
+                    <div class="col-12 d-none" id="itemDinerNewWrap">
+                        <label class="form-label">Nombre del comensal</label>
+                        <input class="form-control" type="text" id="itemDinerNewInput" maxlength="120" placeholder="Ej. Juan">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Producto</label>
+                        <select class="form-select" id="itemProductSelect" required>
+                            <option value="">Selecciona un producto</option>
+                        </select>
+                    </div>
+                    <div class="col-12 d-none" id="itemVariantWrap">
+                        <label class="form-label">Variante</label>
+                        <select class="form-select" id="itemVariantSelect"></select>
+                    </div>
+                    <div class="col-12 d-none" id="itemSuppliesWrap">
+                        <label class="form-label">Insumos</label>
+                        <div id="itemSuppliesList" class="border rounded p-2"></div>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <label class="form-label">Cantidad</label>
+                        <input class="form-control" type="number" min="1" step="1" value="1" id="itemQuantityInput" required>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <label class="form-label">Precio unitario estimado</label>
+                        <input class="form-control" type="text" id="itemUnitPricePreview" readonly>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Notas (opcional)</label>
+                        <input class="form-control" type="text" id="itemNotesInput" maxlength="255">
+                    </div>
+                    <div class="col-12 text-danger small" id="itemModalErrors"></div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" type="button" data-bs-dismiss="modal">Cancelar</button>
+                    <button class="btn btn-dark" type="submit">Agregar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{{ product_catalog|json_script:'product-catalog-data' }}
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const catalog = JSON.parse(document.getElementById('product-catalog-data').textContent || '[]');
+    const items = [];
+
+    const itemsBody = document.getElementById('orderItemsBody');
+    const emptyRow = document.getElementById('orderItemsEmpty');
+    const totalCell = document.getElementById('orderTotalCell');
+    const itemsJsonField = document.getElementById('itemsJsonField');
+
+    const modalEl = document.getElementById('modalAddOrderItem');
+    const addItemModal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    const addItemForm = document.getElementById('formAddOrderItem');
+
+    const dinerSelect = document.getElementById('itemDinerSelect');
+    const dinerNewWrap = document.getElementById('itemDinerNewWrap');
+    const dinerNewInput = document.getElementById('itemDinerNewInput');
+    const diners = [];
+
+    function syncDinerSelect() {
+        // Keep only the "+ Nuevo comensal" option, then re-add all diners
+        dinerSelect.innerHTML = '<option value="__nuevo__">+ Nuevo comensal</option>';
+        diners.forEach(function (name) {
+            const opt = document.createElement('option');
+            opt.value = name;
+            opt.textContent = name;
+            dinerSelect.appendChild(opt);
+        });
+    }
+
+    function getDinerName() {
+        if (dinerSelect.value === '__nuevo__') {
+            return dinerNewInput.value.trim();
+        }
+        return dinerSelect.value;
+    }
+
+    dinerSelect.addEventListener('change', function () {
+        if (dinerSelect.value === '__nuevo__') {
+            dinerNewWrap.classList.remove('d-none');
+            dinerNewInput.focus();
+        } else {
+            dinerNewWrap.classList.add('d-none');
+            dinerNewInput.value = '';
+        }
+    });
+
+    // First product: show new-diner input immediately
+    dinerNewWrap.classList.remove('d-none');
+
+    const productSelect = document.getElementById('itemProductSelect');
+    const variantWrap = document.getElementById('itemVariantWrap');
+    const variantSelect = document.getElementById('itemVariantSelect');
+    const suppliesWrap = document.getElementById('itemSuppliesWrap');
+    const suppliesList = document.getElementById('itemSuppliesList');
+    const quantityInput = document.getElementById('itemQuantityInput');
+    const notesInput = document.getElementById('itemNotesInput');
+    const unitPricePreview = document.getElementById('itemUnitPricePreview');
+    const itemModalErrors = document.getElementById('itemModalErrors');
+
+    function asMoney(value) {
+        return '$' + Number(value || 0).toFixed(2);
+    }
+
+    function selectedProduct() {
+        return catalog.find(function (p) { return String(p.id) === productSelect.value; }) || null;
+    }
+
+    function selectedVariant(product) {
+        if (!product) {
+            return null;
+        }
+        return product.variants.find(function (v) { return String(v.id) === variantSelect.value; }) || null;
+    }
+
+    function updateUnitPricePreview() {
+        const product = selectedProduct();
+        if (!product) {
+            unitPricePreview.value = '$0.00';
+            return;
+        }
+        const variant = selectedVariant(product);
+        const basePrice = Number(product.price || 0);
+        const delta = variant ? Number(variant.price_delta || 0) : 0;
+        unitPricePreview.value = asMoney(basePrice + delta);
+    }
+
+    function renderProductSelect() {
+        catalog.forEach(function (p) {
+            const opt = document.createElement('option');
+            opt.value = p.id;
+            opt.textContent = p.name + ' (' + asMoney(p.price) + ')';
+            productSelect.appendChild(opt);
+        });
+    }
+
+    function renderVariantAndSupplies() {
+        const product = selectedProduct();
+        variantSelect.innerHTML = '';
+        suppliesList.innerHTML = '';
+        variantWrap.classList.add('d-none');
+        suppliesWrap.classList.add('d-none');
+
+        if (!product) {
+            updateUnitPricePreview();
+            return;
+        }
+
+        if (product.variants && product.variants.length) {
+            variantWrap.classList.remove('d-none');
+            const defaultOption = document.createElement('option');
+            defaultOption.value = '';
+            defaultOption.textContent = 'Sin variante';
+            variantSelect.appendChild(defaultOption);
+            product.variants.forEach(function (variant) {
+                const opt = document.createElement('option');
+                opt.value = variant.id;
+                opt.textContent = variant.name + ' (+' + asMoney(variant.price_delta) + ')';
+                variantSelect.appendChild(opt);
+            });
+        }
+
+        if (product.supplies && product.supplies.length) {
+            suppliesWrap.classList.remove('d-none');
+            product.supplies.forEach(function (supply) {
+                const row = document.createElement('div');
+                row.className = 'form-check';
+                row.innerHTML = '<input class="form-check-input" type="checkbox" value="' + supply.id + '" id="supply_' + supply.id + '">' +
+                    '<label class="form-check-label" for="supply_' + supply.id + '">' + supply.name + '</label>';
+                suppliesList.appendChild(row);
+            });
+        }
+
+        updateUnitPricePreview();
+    }
+
+    function renderItems() {
+        itemsBody.querySelectorAll('tr[data-item-index]').forEach(function (row) { row.remove(); });
+        if (!items.length) {
+            emptyRow.classList.remove('d-none');
+            totalCell.textContent = '$0.00';
+            itemsJsonField.value = '[]';
+            return;
+        }
+        emptyRow.classList.add('d-none');
+
+        let total = 0;
+        items.forEach(function (item, index) {
+            const subtotal = Number(item.unit_price) * Number(item.quantity);
+            total += subtotal;
+            const row = document.createElement('tr');
+            row.setAttribute('data-item-index', String(index));
+            row.innerHTML =
+                '<td>' + item.product_name + '</td>' +
+                '<td>' + (item.diner_name || 'Mesa') + '</td>' +
+                '<td>' + (item.variant_name || '-') + '</td>' +
+                '<td>' + (item.supply_names.length ? item.supply_names.join(', ') : '-') + '</td>' +
+                '<td>' + item.quantity + '</td>' +
+                '<td>' + asMoney(item.unit_price) + '</td>' +
+                '<td>' + asMoney(subtotal) + '</td>' +
+                '<td><button type="button" class="btn btn-sm btn-outline-danger btn-remove-item">Quitar</button></td>';
+            itemsBody.appendChild(row);
+        });
+
+        totalCell.textContent = asMoney(total);
+        itemsJsonField.value = JSON.stringify(items.map(function (item) {
+            return {
+                product_id: item.product_id,
+                variant_id: item.variant_id,
+                supply_names: item.supply_names,
+                quantity: item.quantity,
+                notes: item.notes,
+                diner_name: item.diner_name || '',
+            };
+        }));
+    }
+
+    document.getElementById('btnOpenAddItemModal').addEventListener('click', function () {
+        addItemForm.reset();
+        productSelect.value = '';
+        variantSelect.innerHTML = '';
+        suppliesList.innerHTML = '';
+        variantWrap.classList.add('d-none');
+        suppliesWrap.classList.add('d-none');
+        quantityInput.value = '1';
+        unitPricePreview.value = '$0.00';
+        itemModalErrors.textContent = '';
+        dinerNewInput.value = '';
+        // If we already have diners, pre-select the first one; otherwise show new-diner input
+        if (diners.length) {
+            dinerSelect.value = diners[0];
+            dinerNewWrap.classList.add('d-none');
+        } else {
+            dinerSelect.value = '__nuevo__';
+            dinerNewWrap.classList.remove('d-none');
+        }
+        addItemModal.show();
+    });
+
+    productSelect.addEventListener('change', renderVariantAndSupplies);
+    variantSelect.addEventListener('change', updateUnitPricePreview);
+
+    addItemForm.addEventListener('submit', function (event) {
+        event.preventDefault();
+        itemModalErrors.textContent = '';
+
+        const product = selectedProduct();
+        const quantity = Number(quantityInput.value || 0);
+        if (!product) {
+            itemModalErrors.textContent = 'Selecciona un producto.';
+            return;
+        }
+        if (!quantity || quantity < 1) {
+            itemModalErrors.textContent = 'La cantidad debe ser mayor a 0.';
+            return;
+        }
+        if (dinerSelect.value === '__nuevo__' && !dinerNewInput.value.trim()) {
+            itemModalErrors.textContent = 'Escribe el nombre del comensal.';
+            return;
+        }
+
+        const dinerName = getDinerName();
+        if (dinerName && !diners.includes(dinerName)) {
+            diners.push(dinerName);
+            syncDinerSelect();
+        }
+
+        const variant = selectedVariant(product);
+        const checkedSupplies = Array.from(suppliesList.querySelectorAll('input[type="checkbox"]:checked'));
+        const supplyNames = checkedSupplies.map(function (input) {
+            const label = suppliesList.querySelector('label[for="' + input.id + '"]');
+            return label ? label.textContent : input.value;
+        });
+        const unitPrice = Number(product.price || 0) + (variant ? Number(variant.price_delta || 0) : 0);
+
+        items.push({
+            product_id: product.id,
+            product_name: product.name,
+            variant_id: variant ? variant.id : null,
+            variant_name: variant ? variant.name : '',
+            supply_names: supplyNames,
+            quantity: quantity,
+            unit_price: unitPrice,
+            notes: notesInput.value || '',
+            diner_name: dinerName,
+        });
+
+        renderItems();
+        addItemModal.hide();
+    });
+
+    itemsBody.addEventListener('click', function (event) {
+        const btn = event.target.closest('.btn-remove-item');
+        if (!btn) {
+            return;
+        }
+        const row = btn.closest('tr[data-item-index]');
+        if (!row) {
+            return;
+        }
+        const index = Number(row.getAttribute('data-item-index'));
+        if (!Number.isNaN(index)) {
+            items.splice(index, 1);
+            renderItems();
+        }
+    });
+
+    document.querySelector('form[data-follow-redirect="true"]').addEventListener('submit', function (event) {
+        if (!items.length) {
+            event.preventDefault();
+            alert('Agrega al menos un producto a la comanda.');
+            return;
+        }
+        itemsJsonField.value = JSON.stringify(items.map(function (item) {
+            return {
+                product_id: item.product_id,
+                variant_id: item.variant_id,
+                supply_names: item.supply_names,
+                quantity: item.quantity,
+                notes: item.notes,
+                diner_name: item.diner_name || '',
+            };
+        }));
+    });
+
+    renderProductSelect();
+    renderItems();
+});
+</script>
+{% endblock %}

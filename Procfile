@@ -1,0 +1,1 @@
+web: gunicorn bar.wsgi:application

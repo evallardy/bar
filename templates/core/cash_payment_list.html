@@ -1,0 +1,388 @@
+{% extends 'base.html' %}
+
+{% block title %}Pagos de Comanda | Bar{% endblock %}
+
+{% block content %}
+<section class="bar-page-header rounded-4 p-4 p-lg-5 mb-4 overflow-hidden">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 page-header-layout">
+        <div>
+            <p class="text-uppercase small mb-1 page-kicker">Caja</p>
+            <h1 class="page-title mb-2">Pagos de mesa {{ order.table_number }}</h1>
+            <p class="page-copy mb-0">Consulta el historial de pagos registrados para la comanda, incluyendo montos por metodo y evidencias capturadas.</p>
+        </div>
+        <div class="text-end page-aside">
+            <div class="small page-meta">Total</div>
+            <div class="h5 fw-semibold mb-1">${{ payment_summary.total_amount }}</div>
+            <div class="small page-meta">Pagado</div>
+            <div class="h5 fw-semibold mb-1">${{ payment_summary.paid_amount }}</div>
+            <div class="small page-meta">Pendiente</div>
+            <div class="h6 fw-semibold mb-0">${{ payment_summary.pending_amount }}</div>
+        </div>
+    </div>
+</section>
+
+<div class="d-flex justify-content-start mb-4">
+    <a class="btn btn-outline-secondary" href="{{ back_url }}">Cancelar</a>
+</div>
+
+<section class="card border-0 shadow-sm rounded-4 restaurant-card table-shell">
+    <div class="card-body p-4">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3 section-heading-row">
+            <h2 class="h5 mb-0">Listado de pagos</h2>
+            <div class="small text-muted">Comanda #{{ order.id }}</div>
+        </div>
+        {% if payments %}
+        <div class="payment-history-list">
+            {% for payment in payments %}
+            <article class="payment-history-item">
+                <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-3">
+                    <div>
+                        <div class="fw-semibold">Pago #{{ payment.id }}</div>
+                        <div class="small text-muted">{{ payment.created_at|date:'d/m/Y H:i' }}{% if payment.created_by %} · {{ payment.created_by.username }}{% endif %}</div>
+                    </div>
+                    <span class="badge text-bg-dark">${{ payment.total_amount }}</span>
+                </div>
+                <div class="payment-history-grid mb-3">
+                    <div class="payment-history-stat"><span class="text-muted small">Efectivo</span><strong>${{ payment.cash_amount }}</strong></div>
+                    <div class="payment-history-stat"><span class="text-muted small">Tarjeta</span><strong>${{ payment.card_amount }}</strong></div>
+                    <div class="payment-history-stat"><span class="text-muted small">Transferencia</span><strong>${{ payment.transfer_amount }}</strong></div>
+                    <div class="payment-history-stat"><span class="text-muted small">Día laboral</span><strong>{% if payment.workday %}#{{ payment.workday.id }}{% else %}-{% endif %}</strong></div>
+                </div>
+                <div class="payment-history-items mb-3">
+                    <div class="small text-muted mb-2">Productos cubiertos</div>
+                    <div class="d-flex flex-wrap gap-2">
+                        {% for item_payment in payment.payment_items.all %}
+                        <span class="badge text-bg-secondary">{{ item_payment.order_item.product.name }} · ${{ item_payment.amount }}</span>
+                        {% empty %}
+                        <span class="text-muted small">Sin productos asociados.</span>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% if payment.card_amount > 0 or payment.transfer_amount > 0 %}
+                <div class="payment-history-grid {% if payment.card_amount > 0 and payment.transfer_amount <= 0 or payment.transfer_amount > 0 and payment.card_amount <= 0 %}payment-history-grid-evidence-single{% endif %}"{% if payment.card_amount > 0 and payment.transfer_amount <= 0 or payment.transfer_amount > 0 and payment.card_amount <= 0 %} style="grid-template-columns: minmax(0, 24rem); justify-content: start; justify-items: start;"{% endif %}>
+                    {% if payment.card_amount > 0 %}
+                    <div class="payment-evidence-card"{% if payment.card_amount > 0 and payment.transfer_amount <= 0 %} style="width: 100%; max-width: 24rem;"{% endif %}>
+                        <div class="payment-evidence-label">Evidencia tarjeta</div>
+                        <div class="payment-evidence-media" data-evidence-slot="card" data-payment-id="{{ payment.id }}">
+                        {% if payment.card_evidence %}
+                        <button
+                            type="button"
+                            class="payment-evidence-link payment-evidence-trigger"
+                            data-evidence-src="{{ payment.card_evidence.url }}"
+                            data-evidence-title="Evidencia tarjeta · Pago #{{ payment.id }}"
+                        >
+                            <img src="{{ payment.card_evidence.url }}" alt="Evidencia tarjeta pago {{ payment.id }}" class="payment-evidence-image">
+                        </button>
+                        {% else %}
+                        <div class="payment-evidence-empty payment-evidence-empty-card">
+                            <i class="bi bi-credit-card-2-front payment-evidence-empty-icon" aria-hidden="true"></i>
+                        </div>
+                        {% endif %}
+                        </div>
+                        <button
+                            type="button"
+                            class="btn btn-outline-dark btn-sm mt-3 payment-evidence-update-trigger"
+                            data-payment-id="{{ payment.id }}"
+                            data-evidence-type="card"
+                            data-evidence-title="Actualizar evidencia tarjeta · Pago #{{ payment.id }}"
+                        >Actualizar foto</button>
+                    </div>
+                    {% endif %}
+                    {% if payment.transfer_amount > 0 %}
+                    <div class="payment-evidence-card"{% if payment.transfer_amount > 0 and payment.card_amount <= 0 %} style="width: 100%; max-width: 24rem;"{% endif %}>
+                        <div class="payment-evidence-label">Evidencia transferencia</div>
+                        <div class="payment-evidence-media" data-evidence-slot="transfer" data-payment-id="{{ payment.id }}">
+                        {% if payment.transfer_evidence %}
+                        <button
+                            type="button"
+                            class="payment-evidence-link payment-evidence-trigger"
+                            data-evidence-src="{{ payment.transfer_evidence.url }}"
+                            data-evidence-title="Evidencia transferencia · Pago #{{ payment.id }}"
+                        >
+                            <img src="{{ payment.transfer_evidence.url }}" alt="Evidencia transferencia pago {{ payment.id }}" class="payment-evidence-image">
+                        </button>
+                        {% else %}
+                        <div class="payment-evidence-empty payment-evidence-empty-transfer">
+                            <i class="bi bi-arrow-left-right payment-evidence-empty-icon" aria-hidden="true"></i>
+                        </div>
+                        {% endif %}
+                        </div>
+                        <button
+                            type="button"
+                            class="btn btn-outline-dark btn-sm mt-3 payment-evidence-update-trigger"
+                            data-payment-id="{{ payment.id }}"
+                            data-evidence-type="transfer"
+                            data-evidence-title="Actualizar evidencia transferencia · Pago #{{ payment.id }}"
+                        >Actualizar foto</button>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </article>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="alert alert-light border mb-0">No hay pagos registrados para esta comanda.</div>
+        {% endif %}
+    </div>
+</section>
+
+<div class="modal fade" id="paymentEvidencePreviewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-xl">
+        <div class="modal-content payment-preview-modal">
+            <div class="modal-header">
+                <h2 class="modal-title h4 mb-0" id="paymentEvidencePreviewTitle">Vista previa de evidencia</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body payment-preview-body">
+                <img src="" alt="Vista previa de evidencia" id="paymentEvidencePreviewImage" class="payment-preview-image">
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="paymentEvidenceUpdateModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title h4 mb-0" id="paymentEvidenceUpdateTitle">Actualizar evidencia</h2>
+                <button type="button" class="btn-close" id="paymentEvidenceUpdateCloseBtn" aria-label="Cerrar"></button>
+            </div>
+            <form id="paymentEvidenceUpdateForm" novalidate>
+                <div class="modal-body">
+                    <div class="alert alert-light small mb-3">Puedes tomar una foto nueva o seleccionar una existente para reemplazar la evidencia actual.</div>
+                    <div class="payment-evidence-fields">
+                        <div class="payment-evidence-field">
+                            <label class="form-label" for="paymentEvidenceUpdateInput" id="paymentEvidenceUpdateLabel">Foto de evidencia</label>
+                            <input class="form-control" type="file" id="paymentEvidenceUpdateInput" accept="image/*" capture="environment">
+                            <div class="form-text" id="paymentEvidenceUpdateHelp">Selecciona una imagen para guardar.</div>
+                        </div>
+                    </div>
+                    <div class="text-danger small mt-3" id="paymentEvidenceUpdateErrors"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" id="paymentEvidenceUpdateCancelBtn">Cancelar</button>
+                    <button type="submit" class="btn btn-dark" id="paymentEvidenceUpdateSubmitBtn">Guardar foto</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    (function () {
+        const modalElement = document.getElementById('paymentEvidencePreviewModal');
+        const imageElement = document.getElementById('paymentEvidencePreviewImage');
+        const titleElement = document.getElementById('paymentEvidencePreviewTitle');
+        const updateModalElement = document.getElementById('paymentEvidenceUpdateModal');
+        const updateForm = document.getElementById('paymentEvidenceUpdateForm');
+        const updateInput = document.getElementById('paymentEvidenceUpdateInput');
+        const updateTitle = document.getElementById('paymentEvidenceUpdateTitle');
+        const updateLabel = document.getElementById('paymentEvidenceUpdateLabel');
+        const updateHelp = document.getElementById('paymentEvidenceUpdateHelp');
+        const updateErrors = document.getElementById('paymentEvidenceUpdateErrors');
+        const updateSubmit = document.getElementById('paymentEvidenceUpdateSubmitBtn');
+        const updateCloseBtn = document.getElementById('paymentEvidenceUpdateCloseBtn');
+        const updateCancelBtn = document.getElementById('paymentEvidenceUpdateCancelBtn');
+        const evidenceUrlTemplate = '{% url "order-payment-evidence" 0 %}';
+        const csrfToken = '{{ csrf_token }}';
+        let currentUpdateContext = null;
+
+        if (!modalElement || !imageElement || !titleElement || !updateModalElement || !updateForm || !updateInput || !window.bootstrap) {
+            return;
+        }
+
+        const previewModal = bootstrap.Modal.getOrCreateInstance(modalElement);
+        const updateModal = bootstrap.Modal.getOrCreateInstance(updateModalElement);
+
+        function buildEvidenceUrl(paymentId) {
+            return evidenceUrlTemplate.replace('/0/', '/' + paymentId + '/');
+        }
+
+        function hideModalWithCleanup(modalEl, modalInstance) {
+            if (modalEl.contains(document.activeElement)) {
+                document.activeElement.blur();
+            }
+            modalInstance.hide();
+            window.setTimeout(() => {
+                if (modalEl.classList.contains('show')) {
+                    modalEl.classList.remove('show');
+                    modalEl.style.display = 'none';
+                }
+                document.body.classList.remove('modal-open');
+                document.body.style.removeProperty('padding-right');
+                document.querySelectorAll('.modal-backdrop').forEach((backdrop) => backdrop.remove());
+            }, 250);
+        }
+
+        function createEvidenceButton(src, title, alt) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'payment-evidence-link payment-evidence-trigger';
+            button.dataset.evidenceSrc = src;
+            button.dataset.evidenceTitle = title;
+
+            const image = document.createElement('img');
+            image.src = src;
+            image.alt = alt;
+            image.className = 'payment-evidence-image';
+
+            button.appendChild(image);
+            button.addEventListener('click', () => {
+                imageElement.src = button.dataset.evidenceSrc || '';
+                imageElement.alt = button.dataset.evidenceTitle || 'Vista previa de evidencia';
+                titleElement.textContent = button.dataset.evidenceTitle || 'Vista previa de evidencia';
+                previewModal.show();
+            });
+            return button;
+        }
+
+        function createEvidenceEmptyState(evidenceType) {
+            const empty = document.createElement('div');
+            empty.className = evidenceType === 'card'
+                ? 'payment-evidence-empty payment-evidence-empty-card'
+                : 'payment-evidence-empty payment-evidence-empty-transfer';
+
+            if (evidenceType === 'card') {
+                const icon = document.createElement('i');
+                icon.className = 'bi bi-credit-card-2-front payment-evidence-empty-icon';
+                icon.setAttribute('aria-hidden', 'true');
+                empty.appendChild(icon);
+                return empty;
+            }
+
+            const icon = document.createElement('i');
+            icon.className = 'bi bi-arrow-left-right payment-evidence-empty-icon';
+            icon.setAttribute('aria-hidden', 'true');
+            empty.appendChild(icon);
+            return empty;
+        }
+
+        function updateEvidenceSlot(paymentId, evidenceType, imageUrl) {
+            const slot = document.querySelector('[data-evidence-slot="' + evidenceType + '"][data-payment-id="' + paymentId + '"]');
+            if (!slot) {
+                return;
+            }
+
+            const titleText = evidenceType === 'card'
+                ? 'Evidencia tarjeta · Pago #' + paymentId
+                : 'Evidencia transferencia · Pago #' + paymentId;
+            const altText = evidenceType === 'card'
+                ? 'Evidencia tarjeta pago ' + paymentId
+                : 'Evidencia transferencia pago ' + paymentId;
+
+            slot.innerHTML = '';
+            if (!imageUrl) {
+                slot.appendChild(createEvidenceEmptyState(evidenceType));
+                return;
+            }
+            slot.appendChild(createEvidenceButton(imageUrl, titleText, altText));
+        }
+
+        function resetUpdateModal() {
+            currentUpdateContext = null;
+            updateForm.reset();
+            updateErrors.textContent = '';
+            updateSubmit.disabled = false;
+        }
+
+        document.querySelectorAll('.payment-evidence-trigger').forEach((trigger) => {
+            trigger.addEventListener('click', () => {
+                imageElement.src = trigger.dataset.evidenceSrc || '';
+                imageElement.alt = trigger.dataset.evidenceTitle || 'Vista previa de evidencia';
+                titleElement.textContent = trigger.dataset.evidenceTitle || 'Vista previa de evidencia';
+                previewModal.show();
+            });
+        });
+
+        document.querySelectorAll('.payment-evidence-update-trigger').forEach((trigger) => {
+            trigger.addEventListener('click', () => {
+                const evidenceType = trigger.dataset.evidenceType || 'card';
+                const paymentId = trigger.dataset.paymentId || '';
+                currentUpdateContext = { paymentId, evidenceType };
+                updateTitle.textContent = trigger.dataset.evidenceTitle || 'Actualizar evidencia';
+                if (evidenceType === 'card') {
+                    updateLabel.textContent = 'Foto de pago con tarjeta';
+                    updateHelp.textContent = 'Toma o selecciona una foto del comprobante de tarjeta.';
+                } else {
+                    updateLabel.textContent = 'Foto de pago con transferencia';
+                    updateHelp.textContent = 'Toma o selecciona una foto del comprobante de transferencia.';
+                }
+                updateErrors.textContent = '';
+                updateInput.value = '';
+                updateSubmit.disabled = false;
+                updateModal.show();
+            });
+        });
+
+        modalElement.addEventListener('hidden.bs.modal', () => {
+            imageElement.src = '';
+            document.body.classList.remove('modal-open');
+            document.body.style.removeProperty('padding-right');
+            document.querySelectorAll('.modal-backdrop').forEach((backdrop) => backdrop.remove());
+        });
+
+        updateModalElement.addEventListener('hidden.bs.modal', () => {
+            resetUpdateModal();
+        });
+
+        [updateCloseBtn, updateCancelBtn].forEach((button) => {
+            if (!button) {
+                return;
+            }
+            button.addEventListener('click', () => hideModalWithCleanup(updateModalElement, updateModal));
+        });
+
+        updateForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            if (!currentUpdateContext) {
+                updateErrors.textContent = 'No se encontró el pago a actualizar.';
+                return;
+            }
+            if (!updateInput.files.length) {
+                updateErrors.textContent = 'Selecciona una imagen para guardar.';
+                return;
+            }
+
+            updateErrors.textContent = '';
+            updateSubmit.disabled = true;
+
+            const formData = new FormData();
+            formData.append('csrfmiddlewaretoken', csrfToken);
+            formData.append(currentUpdateContext.evidenceType === 'card' ? 'card_evidence' : 'transfer_evidence', updateInput.files[0]);
+
+            try {
+                const response = await fetch(buildEvidenceUrl(currentUpdateContext.paymentId), {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: formData,
+                });
+                const data = await response.json();
+                if (!response.ok || !data.ok) {
+                    if (window.showAppDialog) {
+                        window.showAppDialog(data.message || 'No se pudo guardar la evidencia.', 'danger');
+                    }
+                    updateSubmit.disabled = false;
+                    return;
+                }
+
+                const imageUrl = currentUpdateContext.evidenceType === 'card' ? data.card_evidence_url : data.transfer_evidence_url;
+                updateEvidenceSlot(currentUpdateContext.paymentId, currentUpdateContext.evidenceType, imageUrl);
+                hideModalWithCleanup(updateModalElement, updateModal);
+                if (window.showAppDialog && data.message) {
+                    window.showAppDialog(data.message, 'success');
+                }
+            } catch (error) {
+                if (window.showAppDialog) {
+                    window.showAppDialog('Error de conexión. Intenta de nuevo.', 'danger');
+                }
+                updateSubmit.disabled = false;
+            }
+        });
+    })();
+</script>
+{% endblock %}

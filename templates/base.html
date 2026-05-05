@@ -1,0 +1,426 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Bar{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    <link href="{% static 'css/site.css' %}" rel="stylesheet">
+</head>
+<body>
+    <div class="restaurant-orb restaurant-orb-a"></div>
+    <div class="restaurant-orb restaurant-orb-b"></div>
+    <nav class="navbar navbar-expand-lg restaurant-navbar shadow-sm">
+        <div class="container-fluid">
+            <a class="navbar-brand restaurant-brand" href="{% url 'home' %}">
+                <span class="restaurant-brand-mark">B</span>
+                <span>
+                    <span class="restaurant-brand-title">Bar Central</span>
+                    <span class="restaurant-brand-subtitle">Control de barra y servicio</span>
+                </span>
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarBar">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarBar">
+                {% if request.user.is_authenticated %}
+                <ul class="navbar-nav ms-auto mb-2 mb-lg-0 gap-lg-2">
+                    {% if can_menu %}<li class="nav-item"><a class="nav-link" href="{% url 'home' %}">Inicio</a></li>{% endif %}
+                    {% if can_administrador %}<li class="nav-item"><a class="nav-link" href="{% url 'admin-panel' %}">Administrador</a></li>{% endif %}
+                    {% if can_comanda %}<li class="nav-item"><a class="nav-link" href="{% url 'comanda-list' %}">Comanda</a></li>{% endif %}
+                    {% if can_cocina %}<li class="nav-item"><a class="nav-link" href="{% url 'kitchen-board' %}">Cocina</a></li>{% endif %}
+                    {% if can_bar %}<li class="nav-item"><a class="nav-link" href="{% url 'bar-board' %}">Bar</a></li>{% endif %}
+                    {% if can_entregas %}<li class="nav-item"><a class="nav-link" href="{% url 'deliveries-board' %}">Entregas</a></li>{% endif %}
+                    {% if can_caja %}<li class="nav-item"><a class="nav-link" href="{% url 'cash-list' %}">Caja</a></li>{% endif %}
+                    {% if can_manage_users %}<li class="nav-item"><a class="nav-link" href="{% url 'user-list' %}">Usuarios</a></li>{% endif %}
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">{{ request.user.username }}</a>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li><a class="dropdown-item" href="{% url 'password_change' %}">Cambiar contraseña</a></li>
+                        </ul>
+                    </li>
+                    <li class="nav-item"><a class="nav-link" href="{% url 'logout' %}">Salir</a></li>
+                </ul>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+    <main class="container py-4 restaurant-main">
+        {% block content %}{% endblock %}
+    </main>
+    {% if messages %}
+    <div id="server-message-source" class="d-none" aria-hidden="true">
+        {% for message in messages %}
+        <div data-level="{{ message.tags|default:'info' }}">{{ message }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    <div class="modal fade" id="appMessageModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title" id="appMessageTitle">Mensaje</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                </div>
+                <div class="modal-body pt-3">
+                    <div id="appMessageBody" class="text-body-emphasis" style="white-space: pre-line;"></div>
+                </div>
+                <div class="modal-footer border-0 pt-0">
+                    <button type="button" class="btn btn-dark" data-bs-dismiss="modal">Aceptar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        (function () {
+            const actionIconMap = [
+                { pattern: /eliminar|borrar/i, icon: 'trash3' },
+                { pattern: /cancelar|quitar/i, icon: 'x-circle' },
+                { pattern: /editar|cambios/i, icon: 'pencil-square' },
+                { pattern: /guardar/i, icon: 'floppy' },
+                { pattern: /agregar|nuevo/i, icon: 'plus-circle' },
+                { pattern: /abrir/i, icon: 'door-open' },
+                { pattern: /cerrar/i, icon: 'check2-circle' },
+                { pattern: /cobrar|pago/i, icon: 'cash-stack' },
+                { pattern: /ver|detalle/i, icon: 'eye' },
+                { pattern: /volver|regresar/i, icon: 'arrow-left-circle' },
+                { pattern: /salir/i, icon: 'box-arrow-right' },
+                { pattern: /cambiar/i, icon: 'arrow-repeat' },
+                { pattern: /confirmar/i, icon: 'check2' },
+                { pattern: /crear/i, icon: 'plus-square' },
+                { pattern: /modulo/i, icon: 'box-arrow-up-right' }
+            ];
+            const navigationIconMap = [
+                { pattern: /inicio/i, icon: 'house-door' },
+                { pattern: /administrador/i, icon: 'sliders2-vertical' },
+                { pattern: /comanda/i, icon: 'journal-text' },
+                { pattern: /cocina/i, icon: 'egg-fried' },
+                { pattern: /bar/i, icon: 'cup-straw' },
+                { pattern: /entregas/i, icon: 'truck' },
+                { pattern: /caja/i, icon: 'cash-coin' },
+                { pattern: /usuarios/i, icon: 'people' },
+                { pattern: /cambiar contraseña/i, icon: 'key' },
+                { pattern: /salir/i, icon: 'box-arrow-right' }
+            ];
+
+            function normalizeActionText(text) {
+                return (text || '').replace(/\s+/g, ' ').trim();
+            }
+
+            function resolveActionLabel(element) {
+                const explicitLabel = element.dataset.actionLabel || element.getAttribute('aria-label') || element.getAttribute('title');
+                if (explicitLabel) {
+                    return normalizeActionText(explicitLabel);
+                }
+                return normalizeActionText(element.textContent);
+            }
+
+            function resolveActionIcon(label) {
+                const match = actionIconMap.find(entry => entry.pattern.test(label));
+                return match ? match.icon : 'cursor';
+            }
+
+            function resolveNavigationIcon(label) {
+                const match = navigationIconMap.find(entry => entry.pattern.test(label));
+                return match ? match.icon : 'chevron-right';
+            }
+
+            function ensureTooltip(element, label) {
+                if (!label) {
+                    return;
+                }
+                if (!element.getAttribute('title')) {
+                    element.setAttribute('title', label);
+                }
+                if (!element.getAttribute('aria-label')) {
+                    element.setAttribute('aria-label', label);
+                }
+                if (window.bootstrap && window.bootstrap.Tooltip) {
+                    const existingTooltip = bootstrap.Tooltip.getInstance(element);
+                    if (existingTooltip) {
+                        existingTooltip.dispose();
+                    }
+                    bootstrap.Tooltip.getOrCreateInstance(element, {
+                        trigger: 'hover focus'
+                    });
+                }
+            }
+
+            function decorateActionButton(element) {
+                if (!(element instanceof HTMLElement)) {
+                    return;
+                }
+                if (element.dataset.actionEnhanced === 'true') {
+                    ensureTooltip(element, resolveActionLabel(element));
+                    return;
+                }
+
+                const label = resolveActionLabel(element);
+                if (!label) {
+                    return;
+                }
+
+                if (element.classList.contains('btn-close')) {
+                    ensureTooltip(element, label);
+                    element.dataset.actionEnhanced = 'true';
+                    return;
+                }
+
+                const iconName = resolveActionIcon(label);
+                const icon = document.createElement('i');
+                icon.className = 'bi bi-' + iconName + ' action-button-icon';
+                icon.setAttribute('aria-hidden', 'true');
+
+                const labelSpan = document.createElement('span');
+                labelSpan.className = 'action-button-label';
+
+                while (element.firstChild) {
+                    labelSpan.appendChild(element.firstChild);
+                }
+
+                element.appendChild(icon);
+                element.appendChild(labelSpan);
+                element.classList.add('action-button');
+                if (element.classList.contains('btn-sm') || element.closest('td') || element.closest('.table-responsive')) {
+                    element.classList.add('action-button-compact-mobile');
+                }
+                element.dataset.actionEnhanced = 'true';
+                ensureTooltip(element, label);
+            }
+
+            function decorateNavigationLink(element) {
+                if (!(element instanceof HTMLElement)) {
+                    return;
+                }
+                if (element.dataset.navEnhanced === 'true') {
+                    ensureTooltip(element, resolveActionLabel(element));
+                    return;
+                }
+                if (element.classList.contains('dropdown-toggle')) {
+                    return;
+                }
+
+                const label = resolveActionLabel(element);
+                if (!label) {
+                    return;
+                }
+
+                const icon = document.createElement('i');
+                icon.className = 'bi bi-' + resolveNavigationIcon(label) + ' action-nav-icon';
+                icon.setAttribute('aria-hidden', 'true');
+
+                const labelSpan = document.createElement('span');
+                labelSpan.className = 'action-nav-label';
+                while (element.firstChild) {
+                    labelSpan.appendChild(element.firstChild);
+                }
+
+                element.appendChild(icon);
+                element.appendChild(labelSpan);
+                element.classList.add('action-nav-link');
+                element.dataset.navEnhanced = 'true';
+                ensureTooltip(element, label);
+            }
+
+            function enhanceButtons(root) {
+                const scope = root instanceof HTMLElement || root instanceof Document ? root : document;
+                scope.querySelectorAll('a.btn, button.btn, button.btn-close').forEach(decorateActionButton);
+            }
+
+            function enhanceNavigation(root) {
+                const scope = root instanceof HTMLElement || root instanceof Document ? root : document;
+                scope.querySelectorAll('.navbar a.nav-link, .dropdown-menu a.dropdown-item').forEach(decorateNavigationLink);
+            }
+
+            function normalizeMessageLevel(level) {
+                if (!level) {
+                    return 'info';
+                }
+                if (level.indexOf('error') !== -1 || level.indexOf('danger') !== -1) {
+                    return 'danger';
+                }
+                if (level.indexOf('warning') !== -1) {
+                    return 'warning';
+                }
+                if (level.indexOf('success') !== -1) {
+                    return 'success';
+                }
+                return 'info';
+            }
+
+            function showMessage(message, level, title) {
+                if (!message || !window.bootstrap || !window.bootstrap.Modal) {
+                    return;
+                }
+                const normalizedLevel = normalizeMessageLevel(level);
+                const titleMap = {
+                    success: 'Operacion realizada',
+                    warning: 'Atencion',
+                    danger: 'No se pudo completar',
+                    info: 'Mensaje'
+                };
+                const modalEl = document.getElementById('appMessageModal');
+                const titleEl = document.getElementById('appMessageTitle');
+                const bodyEl = document.getElementById('appMessageBody');
+                if (!modalEl || !titleEl || !bodyEl) {
+                    return;
+                }
+                titleEl.textContent = title || titleMap[normalizedLevel] || titleMap.info;
+                bodyEl.textContent = message;
+                modalEl.dataset.messageLevel = normalizedLevel;
+                bootstrap.Modal.getOrCreateInstance(modalEl).show();
+            }
+
+            window.showAppDialog = showMessage;
+
+            function statusBadgeClass(status) {
+                if (status === 'ENTREGADO') return 'text-bg-success';
+                if (status === 'CANCELADO') return 'text-bg-secondary';
+                if (status === 'POR_ENTREGAR') return 'text-bg-warning';
+                if (status === 'EN_PREPARACION') return 'text-bg-warning';
+                return 'text-bg-dark';
+            }
+
+            function paymentBadgeClass(paymentStatus, status) {
+                if (status === 'CANCELADO' && paymentStatus !== 'PAGADO') return 'text-bg-secondary';
+                if (paymentStatus === 'PAGADO') return 'text-bg-success';
+                return 'text-bg-warning payment-badge-pending';
+            }
+
+            function updateItemCard(form, payload) {
+                if (!payload || !payload.item_id) {
+                    return;
+                }
+                const card = document.querySelector('[data-item-id="' + payload.item_id + '"]');
+                if (!card) {
+                    return;
+                }
+                const badge = card.querySelector('[data-item-status]');
+                if (badge && payload.status_display) {
+                    badge.textContent = payload.status_display;
+                    badge.className = 'badge ' + statusBadgeClass(payload.status);
+                }
+                const paymentBadge = card.querySelector('[data-item-payment-status]');
+                if (paymentBadge && payload.payment_status_display) {
+                    paymentBadge.textContent = payload.payment_status_display;
+                    paymentBadge.className = 'badge ' + paymentBadgeClass(payload.paid_status, payload.status);
+                }
+                if (form.dataset.hideOnSuccess === 'true') {
+                    form.remove();
+                }
+                if (form.dataset.removeClosest) {
+                    const container = form.closest(form.dataset.removeClosest);
+                    if (container) {
+                        container.remove();
+                    }
+                }
+                if (payload.cancelled) {
+                    const cancelForm = card.querySelector('[data-role="cancel-item-form"]');
+                    if (cancelForm) {
+                        cancelForm.remove();
+                    }
+                }
+            }
+
+            async function submitAjaxForm(form) {
+                const formData = new FormData(form);
+                const response = await fetch(form.action, {
+                    method: form.method || 'POST',
+                    body: formData,
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    credentials: 'same-origin'
+                });
+
+                let payload = null;
+                try {
+                    payload = await response.json();
+                } catch (e) {
+                    payload = null;
+                }
+
+                if (!response.ok || (payload && payload.ok === false)) {
+                    const errorMessage = payload && payload.message ? payload.message : 'No se pudo procesar la accion.';
+                    showMessage(errorMessage, 'danger');
+                    return;
+                }
+
+                if (payload && payload.message) {
+                    showMessage(payload.message, 'success');
+                }
+
+                updateItemCard(form, payload);
+                form.dispatchEvent(new CustomEvent('ajax:success', { detail: payload }));
+
+                if (form.dataset.followRedirect === 'true' && payload && payload.redirect_url) {
+                    window.location.href = payload.redirect_url;
+                }
+            }
+
+            document.addEventListener('submit', function (event) {
+                const form = event.target;
+                if (!(form instanceof HTMLFormElement) || form.dataset.ajax !== 'true') {
+                    return;
+                }
+                event.preventDefault();
+                submitAjaxForm(form);
+            });
+
+            document.addEventListener('DOMContentLoaded', function () {
+                enhanceButtons(document);
+                enhanceNavigation(document);
+                const source = document.getElementById('server-message-source');
+                if (source) {
+                    const entries = Array.from(source.querySelectorAll('[data-level]')).map(function (node) {
+                        return {
+                            level: normalizeMessageLevel(node.dataset.level),
+                            message: (node.textContent || '').trim()
+                        };
+                    }).filter(function (entry) {
+                        return entry.message;
+                    });
+                    if (entries.length) {
+                        const priority = { danger: 3, warning: 2, success: 1, info: 0 };
+                        const level = entries.reduce(function (current, entry) {
+                            return priority[entry.level] > priority[current] ? entry.level : current;
+                        }, 'info');
+                        const message = entries.map(function (entry) { return entry.message; }).join('\n');
+                        showMessage(message, level);
+                    }
+                }
+            });
+
+            const observer = new MutationObserver(function (mutations) {
+                mutations.forEach(function (mutation) {
+                    mutation.addedNodes.forEach(function (node) {
+                        if (!(node instanceof HTMLElement)) {
+                            return;
+                        }
+                        if (node.matches && (node.matches('a.btn, button.btn, button.btn-close'))) {
+                            decorateActionButton(node);
+                        }
+                        if (node.matches && (node.matches('.navbar a.nav-link, .dropdown-menu a.dropdown-item'))) {
+                            decorateNavigationLink(node);
+                        }
+                        enhanceButtons(node);
+                        enhanceNavigation(node);
+                    });
+                });
+            });
+
+            observer.observe(document.body, {
+                childList: true,
+                subtree: true
+            });
+        })();
+    </script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

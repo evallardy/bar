@@ -1,0 +1,889 @@
+{% extends 'base.html' %}
+
+{% block title %}Detalle de Comanda | Bar{% endblock %}
+
+{% block content %}
+<section class="bar-page-header rounded-4 p-4 p-lg-5 mb-4 overflow-hidden">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 page-header-layout">
+        <div>
+            {% if show_close_action %}
+            <p class="text-uppercase small mb-1 page-kicker">Caja</p>
+            <h1 class="page-title mb-2">Cobro de mesa {{ order.table_number }}</h1>
+            <p class="page-copy mb-0">Revisa el saldo pendiente, registra pagos parciales y confirma el cierre de la mesa sin perder visibilidad del consumo.</p>
+            {% else %}
+            <p class="text-uppercase small mb-1 page-kicker">Comanda</p>
+            <h1 class="page-title mb-2">Detalle de mesa {{ order.table_number }}</h1>
+            <p class="page-copy mb-0">Consulta productos, comensales y estatus de preparación desde una vista clara para servicio y seguimiento.</p>
+            {% endif %}
+        </div>
+        <div class="text-end page-aside">
+            {% if show_close_action %}
+            <div class="small page-meta">Total</div>
+            <div class="h5 fw-semibold mb-1" id="orderTotalDisplay">${{ payment_summary.total_amount }}</div>
+            <div class="small page-meta">Pendiente</div>
+            <div class="h4 fw-bold text-danger mb-1" id="orderPendingDisplay">${{ payment_summary.pending_amount }}</div>
+            <div class="small page-meta">Pagado</div>
+            <div class="h6 fw-semibold mb-0" id="orderPaidDisplay">${{ payment_summary.paid_amount }}</div>
+            {% else %}
+            <div class="small page-meta">Total actual</div>
+            <div class="display-6 fw-semibold mb-0" id="orderTotalDisplay">${{ order.total_amount }}</div>
+            {% endif %}
+        </div>
+    </div>
+</section>
+
+<div class="d-flex justify-content-start mb-4">
+    <a class="btn btn-outline-secondary" href="{{ back_url }}">Cancelar</a>
+</div>
+
+<div class="card border-0 shadow-sm rounded-4 mb-4 restaurant-card table-shell">
+    <div class="card-body p-4">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <h2 class="h5 mb-0">Mesa {{ order.table_number }}</h2>
+            {% if order.status == 'ABIERTA' and not show_close_action %}
+            <button class="btn btn-dark btn-sm" type="button" id="btnOpenAddItemModal">Agregar producto</button>
+            {% endif %}
+        </div>
+        <div class="table-responsive">
+            <table class="table align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        {% if show_close_action and order.status == 'ABIERTA' %}
+                        <th class="text-center"><input type="checkbox" class="form-check-input" id="payAllItems"></th>
+                        {% endif %}
+                        <th class="text-start">Producto</th>
+                        <th class="text-start">Comensal</th>
+                        <th class="text-center">Cant.</th>
+                        <th class="text-end">Precio unit.</th>
+                        <th class="text-end">Subtotal</th>
+                        <th class="text-center">Estatus</th>
+                        {% if is_admin_user %}<th></th>{% endif %}
+                    </tr>
+                </thead>
+                <tbody id="orderItemsBody">
+                    {% for guest, items in grouped_items.items %}
+                    {% for item in items %}
+                    <tr data-item-id="{{ item.id }}" data-item-total="{{ item.total }}">
+                        {% if show_close_action and order.status == 'ABIERTA' %}
+                        <td class="text-center">
+                            {% if item.status != 'CANCELADO' and not item.is_paid %}
+                            <input type="checkbox" class="form-check-input js-pay-item" value="{{ item.id }}">
+                            {% endif %}
+                        </td>
+                        {% endif %}
+                        <td class="text-start">
+                            <div class="fw-semibold">{{ item.product.name }}</div>
+                            {% if item.notes %}<div class="text-muted small">{{ item.notes|cut:'Variante: '|cut:'Insumos: ' }}</div>{% endif %}
+                        </td>
+                        <td class="text-start text-muted small">{{ item.diner_name|default:'Mesa' }}</td>
+                        <td class="text-center">{{ item.quantity }}</td>
+                        <td class="text-end">${{ item.unit_price }}</td>
+                        <td class="text-end fw-semibold">${{ item.total }}</td>
+                        <td class="text-center">
+                            <div class="d-flex flex-column align-items-center gap-1">
+                                <span class="badge {% if item.status == 'ENTREGADO' %}text-bg-info{% elif item.status == 'CANCELADO' %}text-bg-secondary{% elif item.status == 'POR_ENTREGAR' %}text-bg-warning{% elif item.status == 'EN_PREPARACION' %}text-bg-primary{% else %}text-bg-dark{% endif %}" data-item-status>
+                                    {{ item.get_status_display }}
+                                </span>
+                                <span class="badge {% if item.status == 'CANCELADO' and not item.is_paid %}text-bg-secondary{% elif item.is_paid %}text-bg-success{% else %}text-bg-warning payment-badge-pending{% endif %}" data-item-payment-status>
+                                    {{ item.payment_status_label }}
+                                </span>
+                            </div>
+                        </td>
+                        {% if is_admin_user %}
+                        <td>
+                            {% if item.status != 'ENTREGADO' and item.status != 'CANCELADO' and not item.is_paid %}
+                            <form method="post" action="{% url 'item-cancel' item.id %}" data-ajax="true" data-role="cancel-item-form">
+                                {% csrf_token %}
+                                <button class="btn btn-sm btn-outline-danger">Cancelar</button>
+                            </form>
+                            {% endif %}
+                        </td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                    {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <th colspan="{% if show_close_action and order.status == 'ABIERTA' %}{% if is_admin_user %}7{% else %}6{% endif %}{% else %}{% if is_admin_user %}6{% else %}5{% endif %}{% endif %}" class="text-end">Total</th>
+                        <th class="text-end" id="orderTotalCell">${{ order.total_amount }}</th>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% if show_close_action and order.status == 'ABIERTA' %}
+<div class="d-flex flex-wrap justify-content-end gap-2 mb-3">
+    <button class="btn btn-outline-dark" type="button" id="btnOpenPaymentModal">Cobrar seleccion</button>
+    <form method="post" action="{% url 'close-order' order.id %}" data-ajax="true" data-follow-redirect="true" id="closeOrderForm" {% if not payment_summary.can_close %}class="d-none"{% endif %}>
+        {% csrf_token %}
+        <button class="btn btn-dark">Cerrar comanda</button>
+    </form>
+</div>
+
+<div class="modal fade" id="modalPayment" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Cobrar productos seleccionados</h5>
+                <button type="button" class="btn-close" id="paymentModalCloseBtn" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <form id="paymentForm" novalidate>
+                <div class="modal-body">
+                    <div class="d-flex justify-content-between mb-3">
+                        <span class="text-muted">Total seleccionado</span>
+                        <strong id="paymentSelectedTotal">$0.00</strong>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Efectivo</label>
+                        <input class="form-control" type="number" min="0" step="0.01" id="paymentCash" value="0.00">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Tarjeta</label>
+                        <input class="form-control" type="number" min="0" step="0.01" id="paymentCard" value="0.00">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Transferencia</label>
+                        <input class="form-control" type="number" min="0" step="0.01" id="paymentTransfer" value="0.00">
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-muted">Suma capturada</span>
+                        <strong id="paymentEnteredTotal">$0.00</strong>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted">Diferencia</span>
+                        <strong id="paymentDifference">$0.00</strong>
+                    </div>
+                    <div class="text-danger small mt-2" id="paymentErrors"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" id="paymentModalCancelBtn" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-dark">Confirmar pago</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalPaymentEvidence" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Evidencia de pago</h5>
+                <button type="button" class="btn-close" id="paymentEvidenceCloseBtn" aria-label="Cerrar"></button>
+            </div>
+            <form id="paymentEvidenceForm" novalidate>
+                <div class="modal-body">
+                    <div class="alert alert-light small mb-3">
+                        Esta actividad es opcional. Si el pago incluyo tarjeta o transferencia, puedes tomar una foto de evidencia desde celular o tableta.
+                    </div>
+                    <div class="payment-evidence-fields">
+                        <div class="payment-evidence-field d-none" id="cardEvidenceWrap">
+                            <label class="form-label" for="cardEvidenceInput">Foto de pago con tarjeta</label>
+                            <input class="form-control" type="file" id="cardEvidenceInput" accept="image/*" capture="environment">
+                            <div class="form-text">Toma o selecciona una foto del comprobante de tarjeta.</div>
+                        </div>
+                        <div class="payment-evidence-field d-none" id="transferEvidenceWrap">
+                            <label class="form-label" for="transferEvidenceInput">Foto de pago con transferencia</label>
+                            <input class="form-control" type="file" id="transferEvidenceInput" accept="image/*" capture="environment">
+                            <div class="form-text">Toma o selecciona una foto del comprobante de transferencia.</div>
+                        </div>
+                    </div>
+                    <div class="text-danger small mt-3" id="paymentEvidenceErrors"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" id="paymentEvidenceCancelBtn">Cancelar</button>
+                    <button type="submit" class="btn btn-dark" id="paymentEvidenceSubmitBtn">Guardar evidencia</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if order.status == 'ABIERTA' and not show_close_action %}
+<!-- Modal agregar producto -->
+<div class="modal fade" id="modalAddOrderItem" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Agregar producto</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="formAddOrderItem" novalidate>
+                <div class="modal-body row g-3">
+                    <!-- Comensal -->
+                    <div class="col-12">
+                        <label class="form-label">Comensal</label>
+                        <select class="form-select" id="itemDinerSelect">
+                            {% for diner in existing_diners %}
+                            <option value="{{ diner.value }}">{{ diner.label }}</option>
+                            {% endfor %}
+                            <option value="__nuevo__">+ Nuevo comensal...</option>
+                        </select>
+                    </div>
+                    <div class="col-12 d-none" id="itemDinerNewWrap">
+                        <label class="form-label">Nombre del nuevo comensal</label>
+                        <input class="form-control" type="text" id="itemDinerNewInput" maxlength="120" placeholder="Ej: Ana, Comensal 3...">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Producto</label>
+                        <select class="form-select" id="itemProductSelect" required>
+                            <option value="">Selecciona un producto</option>
+                        </select>
+                    </div>
+                    <div class="col-12 d-none" id="itemVariantWrap">
+                        <label class="form-label">Variante</label>
+                        <select class="form-select" id="itemVariantSelect"></select>
+                    </div>
+                    <div class="col-12 d-none" id="itemSuppliesWrap">
+                        <label class="form-label">Insumos</label>
+                        <div id="itemSuppliesList" class="border rounded p-2"></div>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <label class="form-label">Cantidad</label>
+                        <input class="form-control" type="number" min="1" step="1" value="1" id="itemQuantityInput" required>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <label class="form-label">Precio unitario estimado</label>
+                        <input class="form-control" type="text" id="itemUnitPricePreview" readonly>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Notas (opcional)</label>
+                        <input class="form-control" type="text" id="itemNotesInput" maxlength="255">
+                    </div>
+                    <div class="col-12 text-danger small" id="itemModalErrors"></div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" type="button" data-bs-dismiss="modal">Cancelar</button>
+                    <button class="btn btn-dark" type="submit">Agregar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{{ product_catalog|json_script:'product-catalog-data' }}
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var catalog = JSON.parse(document.getElementById('product-catalog-data').textContent || '[]');
+    var addUrl = '{% url "comanda-add-items" order.id %}';
+    var csrfToken = '{{ csrf_token }}';
+    var isAdmin = {{ is_admin_user|yesno:"true,false" }};
+
+    var itemsBody = document.getElementById('orderItemsBody');
+    var totalCell = document.getElementById('orderTotalCell');
+    var totalDisplay = document.getElementById('orderTotalDisplay');
+
+    var modalEl = document.getElementById('modalAddOrderItem');
+    var addItemModal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    var addItemForm = document.getElementById('formAddOrderItem');
+
+    var productSelect = document.getElementById('itemProductSelect');
+    var variantWrap = document.getElementById('itemVariantWrap');
+    var variantSelect = document.getElementById('itemVariantSelect');
+    var suppliesWrap = document.getElementById('itemSuppliesWrap');
+    var suppliesList = document.getElementById('itemSuppliesList');
+    var quantityInput = document.getElementById('itemQuantityInput');
+    var notesInput = document.getElementById('itemNotesInput');
+    var unitPricePreview = document.getElementById('itemUnitPricePreview');
+    var itemModalErrors = document.getElementById('itemModalErrors');
+    var dinerSelect = document.getElementById('itemDinerSelect');
+    var dinerNewWrap = document.getElementById('itemDinerNewWrap');
+    var dinerNewInput = document.getElementById('itemDinerNewInput');
+
+    // Mostrar/ocultar campo de nuevo comensal
+    dinerSelect.addEventListener('change', function () {
+        if (dinerSelect.value === '__nuevo__') {
+            dinerNewWrap.classList.remove('d-none');
+            dinerNewInput.focus();
+        } else {
+            dinerNewWrap.classList.add('d-none');
+            dinerNewInput.value = '';
+        }
+    });
+
+    function getDinerName() {
+        if (dinerSelect.value === '__nuevo__') {
+            return dinerNewInput.value.trim();
+        }
+        return dinerSelect.value; // puede ser '' (Mesa) o nombre existente
+    }
+
+    function asMoney(value) {
+        return '$' + Number(value || 0).toFixed(2);
+    }
+
+    function cleanNoteText(text) {
+        return String(text || '').replaceAll('Variante: ', '').replaceAll('Insumos: ', '');
+    }
+
+    function selectedProduct() {
+        return catalog.find(function (p) { return String(p.id) === productSelect.value; }) || null;
+    }
+
+    function selectedVariant(product) {
+        if (!product) return null;
+        return product.variants.find(function (v) { return String(v.id) === variantSelect.value; }) || null;
+    }
+
+    function updateUnitPricePreview() {
+        var product = selectedProduct();
+        if (!product) { unitPricePreview.value = '$0.00'; return; }
+        var variant = selectedVariant(product);
+        var basePrice = Number(product.price || 0);
+        var delta = variant ? Number(variant.price_delta || 0) : 0;
+        unitPricePreview.value = asMoney(basePrice + delta);
+    }
+
+    function renderVariantAndSupplies() {
+        var product = selectedProduct();
+        variantSelect.innerHTML = '';
+        suppliesList.innerHTML = '';
+        variantWrap.classList.add('d-none');
+        suppliesWrap.classList.add('d-none');
+        if (!product) { updateUnitPricePreview(); return; }
+
+        if (product.variants && product.variants.length) {
+            variantWrap.classList.remove('d-none');
+            var defaultOpt = document.createElement('option');
+            defaultOpt.value = '';
+            defaultOpt.textContent = 'Sin variante';
+            variantSelect.appendChild(defaultOpt);
+            product.variants.forEach(function (v) {
+                var opt = document.createElement('option');
+                opt.value = v.id;
+                opt.textContent = v.name + ' (+' + asMoney(v.price_delta) + ')';
+                variantSelect.appendChild(opt);
+            });
+        }
+
+        if (product.supplies && product.supplies.length) {
+            suppliesWrap.classList.remove('d-none');
+            product.supplies.forEach(function (supply) {
+                var row = document.createElement('div');
+                row.className = 'form-check';
+                row.innerHTML = '<input class="form-check-input" type="checkbox" value="' + supply.id + '" id="sup_' + supply.id + '">' +
+                    '<label class="form-check-label" for="sup_' + supply.id + '">' + supply.name + '</label>';
+                suppliesList.appendChild(row);
+            });
+        }
+
+        updateUnitPricePreview();
+    }
+
+    // Cargar productos en el select
+    catalog.forEach(function (p) {
+        var opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = p.name + ' (' + asMoney(p.price) + ')';
+        productSelect.appendChild(opt);
+    });
+
+    document.getElementById('btnOpenAddItemModal').addEventListener('click', function () {
+        addItemForm.reset();
+        productSelect.value = '';
+        variantSelect.innerHTML = '';
+        suppliesList.innerHTML = '';
+        variantWrap.classList.add('d-none');
+        suppliesWrap.classList.add('d-none');
+        dinerSelect.selectedIndex = 0;
+        dinerNewWrap.classList.add('d-none');
+        dinerNewInput.value = '';
+        quantityInput.value = '1';
+        unitPricePreview.value = '$0.00';
+        itemModalErrors.textContent = '';
+        addItemModal.show();
+    });
+
+    productSelect.addEventListener('change', renderVariantAndSupplies);
+    variantSelect.addEventListener('change', updateUnitPricePreview);
+
+    addItemForm.addEventListener('submit', function (event) {
+        event.preventDefault();
+        itemModalErrors.textContent = '';
+
+        var product = selectedProduct();
+        var quantity = Number(quantityInput.value || 0);
+        if (!product) { itemModalErrors.textContent = 'Selecciona un producto.'; return; }
+        if (!quantity || quantity < 1) { itemModalErrors.textContent = 'La cantidad debe ser mayor a 0.'; return; }
+        if (dinerSelect.value === '__nuevo__' && !dinerNewInput.value.trim()) {
+            itemModalErrors.textContent = 'Escribe el nombre del nuevo comensal.';
+            return;
+        }
+
+        var variant = selectedVariant(product);
+        var checkedSupplies = Array.from(suppliesList.querySelectorAll('input[type="checkbox"]:checked'));
+        var supplyNames = checkedSupplies.map(function (input) {
+            var label = suppliesList.querySelector('label[for="' + input.id + '"]');
+            return label ? label.textContent.trim() : input.value;
+        });
+        var dinerName = getDinerName();
+
+        var payload = [{
+            product_id: product.id,
+            variant_id: variant ? variant.id : null,
+            supply_names: supplyNames,
+            quantity: quantity,
+            notes: notesInput.value || '',
+            diner_name: dinerName,
+        }];
+
+        var formData = new FormData();
+        formData.append('csrfmiddlewaretoken', csrfToken);
+        formData.append('items_json', JSON.stringify(payload));
+
+        fetch(addUrl, {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: formData,
+        })
+        .then(function (response) { return response.json(); })
+        .then(function (data) {
+            if (!data.ok) {
+                itemModalErrors.textContent = data.message || 'Error al agregar el producto.';
+                return;
+            }
+            addItemModal.hide();
+
+            data.items.forEach(function (item) {
+                var statusClass = item.status === 'ENTREGADO' ? 'text-bg-success'
+                    : item.status === 'CANCELADO' ? 'text-bg-secondary'
+                    : item.status === 'POR_ENTREGAR' ? 'text-bg-warning'
+                    : item.status === 'EN_PREPARACION' ? 'text-bg-primary'
+                    : 'text-bg-dark';
+                var paymentStatusClass = item.status === 'CANCELADO' && item.paid_status !== 'PAGADO' ? 'text-bg-secondary'
+                    : item.paid_status === 'PAGADO' ? 'text-bg-success'
+                    : 'text-bg-warning payment-badge-pending';
+
+                var cancelCell = isAdmin
+                    ? '<td><form method="post" action="/items/' + item.id + '/cancelar/" data-ajax="true" data-role="cancel-item-form"><input type="hidden" name="csrfmiddlewaretoken" value="' + csrfToken + '"><button class="btn btn-sm btn-outline-danger">Cancelar</button></form></td>'
+                    : '';
+
+                var dinerLabel = item.diner_name || 'Mesa';
+                var row = document.createElement('tr');
+                row.setAttribute('data-item-id', String(item.id));
+                row.innerHTML =
+                    '<td><div class="fw-semibold">' + item.product_name + '</div>' +
+                    (item.notes ? '<div class="text-muted small">' + cleanNoteText(item.notes) + '</div>' : '') + '</td>' +
+                    '<td class="text-muted small">' + dinerLabel + '</td>' +
+                    '<td class="text-center">' + item.quantity + '</td>' +
+                    '<td class="text-end">$' + item.unit_price + '</td>' +
+                    '<td class="text-end fw-semibold">$' + item.total + '</td>' +
+                    '<td><div class="d-flex flex-column align-items-center gap-1"><span class="badge ' + statusClass + '" data-item-status>' + item.status_display + '</span><span class="badge ' + paymentStatusClass + '" data-item-payment-status>' + item.payment_status_display + '</span></div></td>' +
+                    cancelCell;
+                itemsBody.appendChild(row);
+            });
+
+            // Recalcular total sumando subtotales de filas de datos
+            var newTotal = 0;
+            itemsBody.querySelectorAll('tr[data-item-id]').forEach(function (row) {
+                var cells = row.querySelectorAll('td');
+                if (cells.length >= 5) {
+                    var val = cells[4].textContent.replace('$', '').trim();
+                    newTotal += Number(val || 0);
+                }
+            });
+            totalCell.textContent = asMoney(newTotal);
+            if (totalDisplay) totalDisplay.textContent = asMoney(newTotal);
+        })
+        .catch(function () {
+            itemModalErrors.textContent = 'Error de conexión. Intenta de nuevo.';
+        });
+    });
+
+    // Manejar cancelación via AJAX (delegado, incluye filas nuevas)
+    document.addEventListener('ajax:success', function (event) {
+        var detail = event.detail;
+        if (!detail || !detail.formEl) return;
+        var form = detail.formEl;
+        if (form.dataset.role !== 'cancel-item-form') return;
+        var row = form.closest('tr[data-item-id]');
+        if (!row) return;
+        var badge = row.querySelector('[data-item-status]');
+        if (badge) {
+            badge.textContent = 'Cancelado';
+            badge.className = 'badge text-bg-secondary';
+        }
+        var paymentBadge = row.querySelector('[data-item-payment-status]');
+        if (paymentBadge) {
+            paymentBadge.textContent = 'No aplica';
+            paymentBadge.className = 'badge text-bg-secondary';
+        }
+        var cancelTd = form.closest('td');
+        if (cancelTd) cancelTd.innerHTML = '';
+    });
+});
+</script>
+{% endif %}
+
+{% if show_close_action and order.status == 'ABIERTA' %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var paymentUrl = '{% url "order-pay-items" order.id %}';
+    var paymentEvidenceUrlTemplate = '{% url "order-payment-evidence" 0 %}';
+    var csrfToken = '{{ csrf_token }}';
+    var paymentModalEl = document.getElementById('modalPayment');
+    var paymentEvidenceModalEl = document.getElementById('modalPaymentEvidence');
+    if (paymentModalEl && paymentModalEl.parentElement !== document.body) {
+        document.body.appendChild(paymentModalEl);
+    }
+    if (paymentEvidenceModalEl && paymentEvidenceModalEl.parentElement !== document.body) {
+        document.body.appendChild(paymentEvidenceModalEl);
+    }
+    var selectedTotalEl = document.getElementById('paymentSelectedTotal');
+    var enteredTotalEl = document.getElementById('paymentEnteredTotal');
+    var diffEl = document.getElementById('paymentDifference');
+    var pendingDisplay = document.getElementById('orderPendingDisplay');
+    var paidDisplay = document.getElementById('orderPaidDisplay');
+    var paymentErrors = document.getElementById('paymentErrors');
+    var paymentCash = document.getElementById('paymentCash');
+    var paymentCard = document.getElementById('paymentCard');
+    var paymentTransfer = document.getElementById('paymentTransfer');
+    var closeOrderForm = document.getElementById('closeOrderForm');
+    var paymentForm = document.getElementById('paymentForm');
+    var paymentModal = bootstrap.Modal.getOrCreateInstance(paymentModalEl);
+    var paymentEvidenceModal = bootstrap.Modal.getOrCreateInstance(paymentEvidenceModalEl);
+    var paymentModalCloseBtn = document.getElementById('paymentModalCloseBtn');
+    var paymentModalCancelBtn = document.getElementById('paymentModalCancelBtn');
+    var paymentEvidenceForm = document.getElementById('paymentEvidenceForm');
+    var paymentEvidenceCloseBtn = document.getElementById('paymentEvidenceCloseBtn');
+    var paymentEvidenceCancelBtn = document.getElementById('paymentEvidenceCancelBtn');
+    var paymentEvidenceSubmitBtn = document.getElementById('paymentEvidenceSubmitBtn');
+    var paymentEvidenceErrors = document.getElementById('paymentEvidenceErrors');
+    var cardEvidenceWrap = document.getElementById('cardEvidenceWrap');
+    var transferEvidenceWrap = document.getElementById('transferEvidenceWrap');
+    var cardEvidenceInput = document.getElementById('cardEvidenceInput');
+    var transferEvidenceInput = document.getElementById('transferEvidenceInput');
+    var openModalBtn = document.getElementById('btnOpenPaymentModal');
+    var payAllItems = document.getElementById('payAllItems');
+    var latestPaymentContext = null;
+    var pendingEvidenceOpen = false;
+
+    function hideBootstrapModal(modalEl, modalInstance) {
+        if (!modalEl || !modalInstance) {
+            return;
+        }
+        if (modalEl.contains(document.activeElement)) {
+            document.activeElement.blur();
+        }
+        if (modalEl.__hideTimer) {
+            window.clearTimeout(modalEl.__hideTimer);
+        }
+        modalInstance.hide();
+        modalEl.__hideTimer = window.setTimeout(function () {
+            if (!modalEl.classList.contains('show')) {
+                return;
+            }
+            modalEl.classList.remove('show');
+            modalEl.style.display = 'none';
+            modalEl.setAttribute('aria-hidden', 'true');
+            modalEl.removeAttribute('aria-modal');
+            document.body.classList.remove('modal-open');
+            document.body.style.removeProperty('padding-right');
+            document.querySelectorAll('.modal-backdrop').forEach(function (backdrop) {
+                backdrop.remove();
+            });
+            modalEl.dispatchEvent(new Event('hidden.bs.modal'));
+        }, 250);
+    }
+
+    function hidePaymentModal() {
+        hideBootstrapModal(paymentModalEl, paymentModal);
+    }
+
+    function hidePaymentEvidenceModal() {
+        hideBootstrapModal(paymentEvidenceModalEl, paymentEvidenceModal);
+    }
+
+    function pushAjaxMessage(message, level) {
+        if (!message) return;
+        if (window.showAppDialog) {
+            window.showAppDialog(message, level || 'success');
+        }
+    }
+
+    function supportsPortableCapture() {
+        var coarsePointer = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+        var touchDevice = navigator.maxTouchPoints > 0;
+        var mobileAgent = /Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(navigator.userAgent || '');
+        return coarsePointer || (touchDevice && mobileAgent);
+    }
+
+    function buildEvidenceUrl(paymentId) {
+        return paymentEvidenceUrlTemplate.replace('/0/', '/' + paymentId + '/');
+    }
+
+    function resetEvidenceModal() {
+        latestPaymentContext = null;
+        pendingEvidenceOpen = false;
+        paymentEvidenceErrors.textContent = '';
+        cardEvidenceInput.value = '';
+        transferEvidenceInput.value = '';
+        cardEvidenceWrap.classList.add('d-none');
+        transferEvidenceWrap.classList.add('d-none');
+        paymentEvidenceSubmitBtn.disabled = false;
+        delete paymentEvidenceModalEl.dataset.paymentMessage;
+        delete paymentEvidenceModalEl.dataset.finalMessage;
+        delete paymentEvidenceModalEl.dataset.finalLevel;
+    }
+
+    function prepareEvidenceModal(resultData) {
+        var cardAmount = Number(resultData.card_amount || 0);
+        var transferAmount = Number(resultData.transfer_amount || 0);
+
+        latestPaymentContext = {
+            paymentId: resultData.payment_id,
+            cardAmount: cardAmount,
+            transferAmount: transferAmount,
+        };
+
+        paymentEvidenceErrors.textContent = '';
+        cardEvidenceInput.value = '';
+        transferEvidenceInput.value = '';
+        cardEvidenceWrap.classList.toggle('d-none', cardAmount <= 0);
+        transferEvidenceWrap.classList.toggle('d-none', transferAmount <= 0);
+        paymentEvidenceSubmitBtn.disabled = false;
+        paymentEvidenceModalEl.dataset.paymentMessage = resultData.message || 'Pago registrado correctamente.';
+        pendingEvidenceOpen = true;
+    }
+
+    paymentModalEl.addEventListener('shown.bs.modal', function () {
+        paymentCash.focus();
+        paymentCash.select();
+    });
+
+    paymentModalEl.addEventListener('hidden.bs.modal', function () {
+        if (paymentModalEl.__hideTimer) {
+            window.clearTimeout(paymentModalEl.__hideTimer);
+            paymentModalEl.__hideTimer = null;
+        }
+        paymentErrors.textContent = '';
+        if (pendingEvidenceOpen) {
+            pendingEvidenceOpen = false;
+            paymentEvidenceModal.show();
+            return;
+        }
+        openModalBtn.focus();
+    });
+
+    paymentEvidenceModalEl.addEventListener('hidden.bs.modal', function () {
+        if (paymentEvidenceModalEl.__hideTimer) {
+            window.clearTimeout(paymentEvidenceModalEl.__hideTimer);
+            paymentEvidenceModalEl.__hideTimer = null;
+        }
+        var finalMessage = paymentEvidenceModalEl.dataset.finalMessage || paymentEvidenceModalEl.dataset.paymentMessage;
+        var finalLevel = paymentEvidenceModalEl.dataset.finalLevel || 'success';
+        resetEvidenceModal();
+        if (finalMessage) {
+            pushAjaxMessage(finalMessage, finalLevel);
+        }
+    });
+
+    function asMoney(value) {
+        return '$' + Number(value || 0).toFixed(2);
+    }
+
+    function rowTotal(row) {
+        return Number(row.dataset.itemTotal || 0);
+    }
+
+    function selectedRows() {
+        return Array.from(document.querySelectorAll('.js-pay-item:checked')).map(function (input) {
+            return input.closest('tr[data-item-id]');
+        }).filter(Boolean);
+    }
+
+    function selectedTotal() {
+        return selectedRows().reduce(function (acc, row) { return acc + rowTotal(row); }, 0);
+    }
+
+    function enteredTotal() {
+        return Number(paymentCash.value || 0) + Number(paymentCard.value || 0) + Number(paymentTransfer.value || 0);
+    }
+
+    function refreshPaymentMath() {
+        var currentSelectedTotal = selectedTotal();
+        var currentEnteredTotal = enteredTotal();
+        var difference = currentSelectedTotal - currentEnteredTotal;
+        selectedTotalEl.textContent = asMoney(currentSelectedTotal);
+        enteredTotalEl.textContent = asMoney(currentEnteredTotal);
+        diffEl.textContent = asMoney(difference);
+        diffEl.className = difference === 0 ? 'text-success' : 'text-danger';
+
+        var itemCheckboxes = Array.from(document.querySelectorAll('.js-pay-item:not(:disabled)'));
+        var checkedCount = itemCheckboxes.filter(function (input) { return input.checked; }).length;
+        if (payAllItems) {
+            payAllItems.checked = itemCheckboxes.length > 0 && checkedCount === itemCheckboxes.length;
+            payAllItems.indeterminate = checkedCount > 0 && checkedCount < itemCheckboxes.length;
+        }
+    }
+
+    document.querySelectorAll('.js-pay-item').forEach(function (checkbox) {
+        checkbox.addEventListener('change', refreshPaymentMath);
+    });
+    if (payAllItems) {
+        payAllItems.addEventListener('change', function () {
+            document.querySelectorAll('.js-pay-item:not(:disabled)').forEach(function (checkbox) {
+                checkbox.checked = payAllItems.checked;
+            });
+            refreshPaymentMath();
+        });
+    }
+    [paymentCash, paymentCard, paymentTransfer].forEach(function (input) {
+        input.addEventListener('input', refreshPaymentMath);
+    });
+    [paymentModalCloseBtn, paymentModalCancelBtn].forEach(function (button) {
+        if (!button) return;
+        button.addEventListener('click', function (event) {
+            event.preventDefault();
+            hidePaymentModal();
+        });
+    });
+    [paymentEvidenceCloseBtn, paymentEvidenceCancelBtn].forEach(function (button) {
+        if (!button) return;
+        button.addEventListener('click', function (event) {
+            event.preventDefault();
+            hidePaymentEvidenceModal();
+        });
+    });
+
+    openModalBtn.addEventListener('click', function () {
+        paymentErrors.textContent = '';
+        if (selectedRows().length === 0) {
+            paymentErrors.textContent = 'Selecciona al menos un producto para cobrar.';
+            return;
+        }
+        paymentCash.value = '0.00';
+        paymentCard.value = '0.00';
+        paymentTransfer.value = '0.00';
+        refreshPaymentMath();
+        paymentModal.show();
+    });
+
+    paymentForm.addEventListener('submit', function (event) {
+        event.preventDefault();
+        paymentErrors.textContent = '';
+        var itemIds = selectedRows().map(function (row) { return row.dataset.itemId; });
+        if (itemIds.length === 0) {
+            paymentErrors.textContent = 'Selecciona al menos un producto para cobrar.';
+            return;
+        }
+
+        var formData = new FormData();
+        formData.append('csrfmiddlewaretoken', csrfToken);
+        itemIds.forEach(function (itemId) { formData.append('item_ids', itemId); });
+        formData.append('cash_amount', paymentCash.value || '0');
+        formData.append('card_amount', paymentCard.value || '0');
+        formData.append('transfer_amount', paymentTransfer.value || '0');
+
+        fetch(paymentUrl, {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: formData,
+        })
+        .then(function (response) {
+            return response.json().then(function (data) {
+                return { ok: response.ok, data: data };
+            });
+        })
+        .then(function (result) {
+            if (!result.ok || !result.data.ok) {
+                paymentErrors.textContent = result.data.message || 'No se pudo registrar el pago.';
+                return;
+            }
+            hidePaymentModal();
+            var paidItemIds = result.data.paid_item_ids || [];
+            paidItemIds.forEach(function (itemId) {
+                var row = document.querySelector('tr[data-item-id="' + itemId + '"]');
+                if (!row) return;
+                var checkbox = row.querySelector('.js-pay-item');
+                if (checkbox) {
+                    checkbox.checked = false;
+                    checkbox.disabled = true;
+                }
+                var paymentStatusBadge = row.querySelector('[data-item-payment-status]');
+                if (paymentStatusBadge) {
+                    paymentStatusBadge.textContent = 'Pagado';
+                    paymentStatusBadge.className = 'badge text-bg-success';
+                }
+            });
+
+            pendingDisplay.textContent = '$' + result.data.pending_amount;
+            paidDisplay.textContent = '$' + result.data.paid_amount;
+            if (result.data.can_close_order) {
+                closeOrderForm.classList.remove('d-none');
+            }
+            refreshPaymentMath();
+            if (supportsPortableCapture() && (Number(result.data.card_amount || 0) > 0 || Number(result.data.transfer_amount || 0) > 0)) {
+                prepareEvidenceModal(result.data);
+                hidePaymentModal();
+                return;
+            }
+            hidePaymentModal();
+            pushAjaxMessage(result.data.message, 'success');
+        })
+        .catch(function () {
+            paymentErrors.textContent = 'Error de conexión. Intenta de nuevo.';
+        });
+    });
+
+    paymentEvidenceForm.addEventListener('submit', function (event) {
+        event.preventDefault();
+        paymentEvidenceErrors.textContent = '';
+        if (!latestPaymentContext || !latestPaymentContext.paymentId) {
+            paymentEvidenceErrors.textContent = 'No se encontro el pago para guardar la evidencia.';
+            return;
+        }
+
+        var hasCardFile = cardEvidenceWrap.classList.contains('d-none') ? false : Boolean(cardEvidenceInput.files && cardEvidenceInput.files[0]);
+        var hasTransferFile = transferEvidenceWrap.classList.contains('d-none') ? false : Boolean(transferEvidenceInput.files && transferEvidenceInput.files[0]);
+        if (!hasCardFile && !hasTransferFile) {
+            paymentEvidenceErrors.textContent = 'Selecciona al menos una foto o presiona Cancelar para omitir este paso.';
+            return;
+        }
+
+        paymentEvidenceSubmitBtn.disabled = true;
+        var formData = new FormData();
+        formData.append('csrfmiddlewaretoken', csrfToken);
+        if (hasCardFile) {
+            formData.append('card_evidence', cardEvidenceInput.files[0]);
+        }
+        if (hasTransferFile) {
+            formData.append('transfer_evidence', transferEvidenceInput.files[0]);
+        }
+
+        fetch(buildEvidenceUrl(latestPaymentContext.paymentId), {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: formData,
+        })
+        .then(function (response) {
+            return response.json().then(function (data) {
+                return { ok: response.ok, data: data };
+            });
+        })
+        .then(function (result) {
+            if (!result.ok || !result.data.ok) {
+                paymentEvidenceSubmitBtn.disabled = false;
+                paymentEvidenceErrors.textContent = result.data.message || 'No se pudo guardar la evidencia.';
+                return;
+            }
+            paymentEvidenceModalEl.dataset.finalMessage = result.data.message || 'Evidencia guardada correctamente.';
+            paymentEvidenceModalEl.dataset.finalLevel = 'success';
+            hidePaymentEvidenceModal();
+        })
+        .catch(function () {
+            paymentEvidenceSubmitBtn.disabled = false;
+            paymentEvidenceErrors.textContent = 'Error de conexión. Intenta de nuevo.';
+        });
+    });
+
+    refreshPaymentMath();
+});
+</script>
+{% endif %}
+{% endblock %}

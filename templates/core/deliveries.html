@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+
+{% block title %}Entregas | Bar{% endblock %}
+
+{% block content %}
+<section class="bar-page-header rounded-4 p-4 p-lg-5 mb-4 overflow-hidden">
+<div>
+    <p class="text-uppercase small mb-1 page-kicker">Entregas</p>
+    <h1 class="page-title mb-2">Pedidos listos para salir</h1>
+    <p class="page-copy mb-0">Visualiza los productos preparados y confirma su salida a mesa con una lectura rápida para servicio continuo.</p>
+</div>
+</section>
+
+<div class="row g-3">
+    {% for item in items %}
+    <div class="col-12 col-lg-6">
+        <article class="card border-0 shadow-sm rounded-4 h-100 restaurant-card table-shell" data-item-id="{{ item.id }}">
+            <div class="card-body p-4">
+                <div class="d-flex justify-content-between gap-3 mb-3">
+                    <div>
+                        <div class="text-muted small">Mesa {{ item.order.table_number }} · Comanda #{{ item.order.id }}</div>
+                        <h2 class="h5 mb-1">{{ item.product.name }}</h2>
+                        <div>{{ item.quantity }} pz{% if item.diner_name %} · {{ item.diner_name }}{% endif %}</div>
+                    </div>
+                    <div class="d-flex flex-column align-items-end gap-1">
+                        <span class="badge text-bg-success" data-item-status>{{ item.get_status_display }}</span>
+                        <span class="badge {% if item.is_paid %}text-bg-success{% else %}text-bg-warning payment-badge-pending{% endif %}" data-item-payment-status>{{ item.payment_status_label }}</span>
+                    </div>
+                </div>
+                <form method="post" action="{% url 'item-deliver' item.id %}" data-ajax="true" data-remove-closest=".col-12">
+                    {% csrf_token %}
+                    <button class="btn btn-dark w-100">Confirmar entrega</button>
+                </form>
+            </div>
+        </article>
+    </div>
+    {% empty %}
+    <div class="col-12"><div class="alert alert-light border">No hay productos listos para entregar.</div></div>
+    {% endfor %}
+</div>
+{% endblock %}

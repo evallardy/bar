@@ -1,0 +1,89 @@
+{% extends 'base.html' %}
+
+{% block title %}Comandas | Bar{% endblock %}
+
+{% block content %}
+<section class="bar-page-header rounded-4 p-4 p-lg-5 mb-4 overflow-hidden">
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-3 page-header-layout">
+    <div>
+        <p class="text-uppercase small mb-1 page-kicker">Comandas</p>
+        <h1 class="page-title mb-2">Mesas en servicio</h1>
+        <p class="page-copy mb-0">Consulta el ritmo de cada mesa, su avance de pago y el acceso rápido al detalle del consumo.</p>
+    </div>
+    <a class="btn btn-dark" href="{% url 'comanda-create' %}">Crear comanda</a>
+</div>
+</section>
+
+<div class="card border-0 shadow-sm rounded-4 restaurant-card table-shell">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="text-center">Mesa</th>
+                        <th class="text-center">Comensales</th>
+                        <th class="text-end">Total</th>
+                        <th class="text-end">Pagado</th>
+                        <th class="text-center">Estado</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for order in orders %}
+                    <tr>
+                        <td class="fw-semibold text-center">{{ order.table_number }}</td>
+                        <td class="text-center">{{ order.total_diners|default:0 }}</td>
+                        <td class="text-end fw-semibold">${{ order.total_amount_value|default:"0.00" }}</td>
+                        <td class="text-end">${{ order.total_paid|default:"0.00" }}</td>
+                        <td class="text-center"><span class="badge text-bg-dark">{{ order.get_status_display }}</span></td>
+                        <td><div class="d-flex gap-2 order-list-actions">
+                            <a class="btn btn-sm btn-outline-dark" href="{% url 'comanda-detail' order.id %}">Ver detalle</a>
+                            {% if order.can_close %}
+                            <button class="btn btn-sm btn-outline-success btn-close-order" type="button" data-order-id="{{ order.id }}" title="Cerrar esta mesa">Cerrar</button>
+                            {% endif %}
+                        </div></td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="7" class="text-muted text-center py-4">No hay comandas registradas.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const closeOrderButtons = document.querySelectorAll('.btn-close-order');
+    closeOrderButtons.forEach(button => {
+        button.addEventListener('click', function (e) {
+            e.preventDefault();
+            const orderId = this.dataset.orderId;
+            if (confirm('¿Está seguro que desea cerrar esta mesa?')) {
+                fetch(`/caja/comanda/${orderId}/cobrar/`, {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || ''
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.ok) {
+                        location.reload();
+                    } else {
+                        alert('Error: ' + (data.message || 'No se pudo cerrar la mesa'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error al cerrar la mesa');
+                });
+            }
+        });
+    });
+});
+</script>
+{% endblock %}

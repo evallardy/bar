@@ -1,0 +1,9 @@
+bind = 'unix:/run/gunicorn-bar.sock'
+workers = 3
+worker_class = 'sync'
+timeout = 120
+graceful_timeout = 30
+keepalive = 5
+accesslog = '/var/log/bar/gunicorn-access.log'
+errorlog = '/var/log/bar/gunicorn-error.log'
+capture_output = True

@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+
+{% block title %}Inicio | Bar{% endblock %}
+
+{% block content %}
+<section class="hero-panel restaurant-hero rounded-4 p-4 p-lg-5 mb-4 text-white shadow-lg overflow-hidden">
+    <div class="d-flex flex-column flex-lg-row justify-content-between gap-4 align-items-start position-relative">
+        <div class="col-lg-8">
+            <p class="text-uppercase small mb-2 opacity-75 hero-kicker">Ritmo de barra</p>
+            <h1 class="display-5 hero-title mb-3">Panel operativo del bar</h1>
+            <p class="hero-copy mb-4">Supervisa comandas, cocina, barra, entregas y caja desde una vista con carácter nocturno, foco en agilidad de salida y lectura clara durante todo el turno.</p>
+            <div class="d-flex flex-wrap gap-2 hero-chip-row">
+                <span class="hero-chip">Coctelería y comandas</span>
+                <span class="hero-chip">Producción por área</span>
+                <span class="hero-chip">Cobro por mesa</span>
+            </div>
+        </div>
+        <div class="glass-card hero-aside p-3 rounded-4">
+            <div class="small text-uppercase opacity-75 mb-2">Estaciones activas</div>
+            <div class="fw-semibold mb-3">{{ areas|join:', ' }}</div>
+            <div class="hero-aside-note">Interfaz pensada para barra, piso, tablet y punto de cobro con presencia visual mas sobria.</div>
+        </div>
+    </div>
+</section>
+
+<section class="row g-3 mb-4">
+    {% for key, value in metrics.items %}
+    <div class="col-6 col-xl-3">
+        <div class="metric-card bg-white rounded-4 p-3 shadow-sm h-100 restaurant-card">
+            <div class="metric-label text-capitalize">{{ key }}</div>
+            <div class="metric-value">{{ value }}</div>
+        </div>
+    </div>
+    {% endfor %}
+</section>
+
+<section class="row g-3">
+    {% for module in modules %}
+    <div class="col-12 col-md-6 col-xl-4">
+        <article class="card h-100 border-0 shadow-sm rounded-4 restaurant-card module-card">
+            <div class="card-body p-4">
+                <div class="module-card-topline"></div>
+                <h2 class="h5 mb-2 module-card-title">{{ module.title }}</h2>
+                <p class="text-muted mb-4">{{ module.description }}</p>
+                <a class="btn btn-outline-dark w-100" href="{% url module.url %}">Abrir área</a>
+            </div>
+        </article>
+    </div>
+    {% endfor %}
+</section>
+{% endblock %}

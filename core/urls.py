@@ -1,0 +1,38 @@
+from django.urls import path
+
+from . import views
+
+urlpatterns = [
+    path('', views.IndexRedirectView.as_view(), name='index'),
+    path('home/', views.HomeView.as_view(), name='home'),
+    path('administrador/', views.AdminPanelView.as_view(), name='admin-panel'),
+    path('comandas/', views.ComandaListView.as_view(), name='comanda-list'),
+    path('comandas/nueva/', views.ComandaCreateView.as_view(), name='comanda-create'),
+    path('comandas/<int:order_id>/', views.ComandaDetailView.as_view(), name='comanda-detail'),
+    path('comandas/<int:order_id>/agregar/', views.OrderItemAddView.as_view(), name='comanda-add-items'),
+    path('cocina/', views.KitchenBoardView.as_view(), name='kitchen-board'),
+    path('bar/', views.BarBoardView.as_view(), name='bar-board'),
+    path('entregas/', views.DeliveriesBoardView.as_view(), name='deliveries-board'),
+    path('caja/', views.CashListView.as_view(), name='cash-list'),
+    path('caja/comanda/<int:order_id>/', views.CashDetailView.as_view(), name='cash-detail'),
+    path('caja/comanda/<int:order_id>/pagos/', views.CashPaymentListView.as_view(), name='cash-payment-list'),
+    path('caja/comanda/<int:order_id>/pagar-items/', views.OrderPaymentView.as_view(), name='order-pay-items'),
+    path('caja/pago/<int:payment_id>/evidencia/', views.OrderPaymentEvidenceView.as_view(), name='order-payment-evidence'),
+    path('caja/comanda/<int:order_id>/cobrar/', views.CloseOrderView.as_view(), name='close-order'),
+    path('items/<int:item_id>/iniciar/', views.ItemStartView.as_view(), name='item-start'),
+    path('items/<int:item_id>/listo/', views.ItemReadyView.as_view(), name='item-ready'),
+    path('items/<int:item_id>/entregar/', views.ItemDeliverView.as_view(), name='item-deliver'),
+    path('items/<int:item_id>/cancelar/', views.ItemCancelView.as_view(), name='item-cancel'),
+    path('administrador/producto/<int:pk>/editar/', views.ProductUpdateView.as_view(), name='product-update'),
+    path('administrador/variante/<int:pk>/editar/', views.ProductVariantUpdateView.as_view(), name='variant-update'),
+    path('administrador/variante/<int:pk>/eliminar/', views.ProductVariantDeleteView.as_view(), name='variant-delete'),
+    path('administrador/insumo/<int:pk>/editar/', views.SupplyUpdateView.as_view(), name='supply-update'),
+    path('administrador/receta/<int:pk>/editar/', views.ProductSupplyUpdateView.as_view(), name='recipe-update'),
+    path('administrador/receta/<int:pk>/eliminar/', views.ProductSupplyDeleteView.as_view(), name='recipe-delete'),
+    path('administrador/dia/abrir/', views.AdminPanelView.as_view(), name='workday-open'),
+    path('administrador/dia/cerrar/', views.AdminPanelView.as_view(), name='workday-close'),
+    path('usuarios/', views.UserListView.as_view(), name='user-list'),
+    path('usuarios/nuevo/', views.UserCreateView.as_view(), name='user-create'),
+    path('usuarios/<int:pk>/editar/', views.UserUpdateView.as_view(), name='user-update'),
+    path('usuarios/<int:pk>/eliminar/', views.UserDeleteView.as_view(), name='user-delete'),
+]

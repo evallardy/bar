@@ -1,0 +1,952 @@
+{% extends 'base.html' %}
+
+{% block title %}Administrador | Bar{% endblock %}
+
+{% block content %}
+<section class="bar-page-header rounded-4 p-4 p-lg-5 mb-4 overflow-hidden">
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-3 page-header-layout">
+    <div>
+        <p class="text-uppercase small mb-1 page-kicker">Administrador</p>
+        <h1 class="page-title mb-2">Control operativo de barra</h1>
+        <p class="page-copy mb-0">Monitorea inventario, variantes, recetas y ventas del turno con una vista central de la operación.</p>
+    </div>
+    <div class="d-flex flex-column align-items-end gap-2 page-aside">
+        {% if active_workday %}
+        <div class="small page-meta">Día activo #{{ active_workday.id }} · Abierto por {{ active_workday.opened_by.username }}</div>
+        <form method="post" action="{% url 'workday-close' %}">
+            {% csrf_token %}
+            <input type="hidden" name="form_kind" value="workday_close">
+            <button class="btn btn-outline-danger" type="submit">Cerrar día de trabajo</button>
+        </form>
+        {% else %}
+        <div class="small page-meta">No hay día de trabajo abierto</div>
+        <form method="post" action="{% url 'workday-open' %}">
+            {% csrf_token %}
+            <input type="hidden" name="form_kind" value="workday_open">
+            <button class="btn btn-dark" type="submit">Abrir día de trabajo</button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+</section>
+
+<section class="row g-3 mb-4">
+    {% for key, value in metrics.items %}
+    <div class="col-6 col-xl-3">
+        <div class="metric-card bg-white rounded-4 p-3 shadow-sm h-100 restaurant-card">
+            <div class="metric-label text-capitalize">{{ key }}</div>
+            <div class="metric-value">{{ value }}</div>
+        </div>
+    </div>
+    {% endfor %}
+</section>
+
+<section class="row g-4">
+    <div class="col-12 col-xl-6">
+        <div class="card border-0 shadow-sm rounded-4 h-100 restaurant-card table-shell">
+            <div class="card-body p-4">
+                <div class="d-flex justify-content-between align-items-center mb-2 section-heading-row">
+                    <h2 class="h5 mb-0">Productos</h2>
+                    <button class="btn btn-sm btn-dark" type="button" data-bs-toggle="modal" data-bs-target="#modalNewProduct">+ Nuevo</button>
+                </div>
+                <p class="text-muted small mb-3">Productos terminados para comanda (ejemplo: cerveza, pizza peperoni, pizza hawaiana).</p>
+                <div class="table-responsive">
+                    <table class="table align-middle">
+                        <thead><tr><th class="text-start">Nombre</th><th class="text-center">Categoria</th><th class="text-end">Precio</th><th class="text-center">Existencia</th><th></th></tr></thead>
+                        <tbody id="product-table-body">
+                            {% for product in products %}
+                            <tr data-product-id="{{ product.pk }}"
+                                data-name="{{ product.name }}"
+                                data-category="{{ product.category }}"
+                                data-price="{{ product.price }}"
+                                data-description="{{ product.description }}"
+                                data-is-active="{{ product.is_active|yesno:'true,false' }}"
+                                data-stock="{{ product.stock }}"
+                                data-has-variants="{{ product.variants.all|length|yesno:'true,false' }}">
+                                <td class="text-start">{{ product.name }}</td>
+                                <td class="text-center">{{ product.get_category_display }}</td>
+                                <td class="text-end">${{ product.price }}</td>
+                                <td class="text-center" data-stock-cell>{{ product.stock }}</td>
+                                <td><button class="btn btn-sm btn-outline-secondary btn-edit-product" type="button">Editar</button></td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="5" class="text-muted">Sin productos registrados.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-xl-6">
+        <div class="card border-0 shadow-sm rounded-4 h-100 restaurant-card table-shell">
+            <div class="card-body p-4">
+                <div class="d-flex justify-content-between align-items-center mb-2 section-heading-row">
+                    <h2 class="h5 mb-0">Insumos</h2>
+                    <button class="btn btn-sm btn-outline-dark" type="button" data-bs-toggle="modal" data-bs-target="#modalNewSupply">+ Nuevo</button>
+                </div>
+                <p class="text-muted small mb-3">Ingredientes e inventario base que componen los productos.</p>
+                <div class="table-responsive">
+                    <table class="table align-middle">
+                        <thead><tr><th class="text-start">Nombre</th><th class="text-center">Hay existencia</th><th></th></tr></thead>
+                        <tbody id="supply-table-body">
+                            {% for supply in supplies %}
+                            <tr data-supply-id="{{ supply.pk }}"
+                                data-name="{{ supply.name }}"
+                                data-is-available="{{ supply.is_available|yesno:'true,false' }}"
+                                class="{% if not supply.is_available %}table-warning{% endif %}">
+                                <td class="text-start">{{ supply.name }}</td>
+                                <td class="text-center">{% if supply.is_available %}Si{% else %}No{% endif %}</td>
+                                <td><button class="btn btn-sm btn-outline-secondary btn-edit-supply" type="button">Editar</button></td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="3" class="text-muted">Sin insumos registrados.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="card border-0 shadow-sm rounded-4 mt-4 restaurant-card table-shell">
+    <div class="card-body p-4">
+        <div class="d-flex justify-content-between align-items-center mb-2 section-heading-row">
+            <h2 class="h5 mb-0">Variantes de productos</h2>
+            <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#modalNewVariant">+ Nuevo</button>
+        </div>
+        <p class="text-muted small mb-3">Agrega variantes a un producto (ej. Cerveza -> Victoria, Corona, Superior). La existencia se controla por variante.</p>
+        <div class="table-responsive">
+            <table class="table align-middle">
+                <thead><tr><th class="text-start">Producto</th><th class="text-start">Variante</th><th class="text-end">Agregado</th><th class="text-center">Existencia</th><th></th></tr></thead>
+                <tbody id="variant-table-body">
+                    {% for variant in variants %}
+                    <tr data-variant-id="{{ variant.pk }}"
+                        data-product-id="{{ variant.product.pk }}"
+                        data-name="{{ variant.name }}"
+                        data-price-delta="{{ variant.price_delta }}"
+                        data-stock="{{ variant.stock }}"
+                        data-is-active="{{ variant.is_active|yesno:'true,false' }}">
+                        <td class="text-start">{{ variant.product.name }}</td>
+                        <td class="text-start">{{ variant.name }}</td>
+                        <td class="text-end">${{ variant.price_delta }}</td>
+                        <td class="text-center">{{ variant.stock }}</td>
+                        <td><div class="d-flex gap-2 admin-table-actions"><button class="btn btn-sm btn-outline-secondary btn-edit-variant" type="button">Editar</button><button class="btn btn-sm btn-outline-danger btn-delete-variant" type="button">Eliminar</button></div></td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" class="text-muted">Sin variantes registradas.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+<section class="card border-0 shadow-sm rounded-4 mt-4 restaurant-card table-shell">
+    <div class="card-body p-4">
+        <div class="d-flex justify-content-between align-items-center mb-2 section-heading-row">
+            <h2 class="h5 mb-0">Insumos por producto</h2>
+            <button class="btn btn-sm btn-outline-dark" type="button" data-bs-toggle="modal" data-bs-target="#modalNewRecipe">+ Nuevo</button>
+        </div>
+        <p class="text-muted small mb-3">Asigna los insumos que lleva cada producto (receta/composición).</p>
+        <div class="table-responsive">
+            <table class="table align-middle">
+                <thead><tr><th class="text-start">Producto</th><th class="text-start">Insumo</th><th></th></tr></thead>
+                <tbody id="recipe-table-body">
+                    {% for recipe in recipes %}
+                    <tr data-recipe-id="{{ recipe.pk }}" data-product-id="{{ recipe.product.pk }}" data-supply-id="{{ recipe.supply.pk }}">
+                        <td class="text-start">{{ recipe.product.name }}</td>
+                        <td class="text-start">{{ recipe.supply.name }}</td>
+                        <td><div class="d-flex gap-2 admin-table-actions"><button class="btn btn-sm btn-outline-secondary btn-edit-recipe" type="button">Editar</button><button class="btn btn-sm btn-outline-danger btn-delete-recipe" type="button">Eliminar</button></div></td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="3" class="text-muted">Sin insumos asignados.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+<section class="card border-0 shadow-sm rounded-4 mt-4 restaurant-card table-shell" id="salesCard">
+    <div class="card-body p-4">
+        <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-3 section-heading-row">
+            <h2 class="h5 mb-0">Ventas</h2>
+            <div class="d-flex flex-wrap align-items-center gap-2 justify-content-end">
+                <form method="get" class="d-flex align-items-center gap-2" id="workdayFilterForm">
+                    <select class="form-select form-select-sm" id="workdayFilter" name="workday">
+                        <option value="all" {% if selected_workday_value == 'all' %}selected{% endif %}>Todos</option>
+                        {% for workday in workdays %}
+                        <option value="{{ workday.id }}" {% if selected_workday_value == workday.id|stringformat:'s' %}selected{% endif %}>
+                            {{ workday.opened_at|date:'d/m/Y' }} ({{ workday.get_status_display }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                </form>
+                <div class="small text-nowrap"><span class="text-muted">Total:</span> <strong>${{ sales_total_amount }}</strong></div>
+                <div class="small text-nowrap"><span class="text-muted">Pagado:</span> <strong>${{ sales_total_paid }}</strong></div>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="table align-middle">
+                <thead><tr><th class="text-center">Mesa</th><th class="text-center">Total productos</th><th class="text-end">Total mesa</th><th class="text-end">Total pagado</th><th class="text-center">Estado</th><th class="text-center">Día laboral</th></tr></thead>
+                <tbody>
+                    {% for order in recent_orders %}
+                    <tr>
+                        <td class="text-center">{{ order.table_number }}</td>
+                        <td class="text-center">{{ order.total_products|default:0 }}</td>
+                        <td class="text-end">${{ order.total_amount }}</td>
+                        <td class="text-end">${{ order.total_paid|default:0 }}</td>
+                        <td class="text-center">{{ order.get_status_display }}</td>
+                        <td class="text-center">{% if order.workday %}{{ order.workday.opened_at|date:'d/m/Y' }}{% else %}-{% endif %}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="6" class="text-muted">Sin ventas registradas.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+<div class="modal fade" id="modalNewProduct" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">Nuevo producto</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <form data-ajax="true" data-admin-form="product" method="post" novalidate>
+                {% csrf_token %}
+                <input type="hidden" name="form_kind" value="product">
+                <div class="modal-body row g-3">
+                    {% for field in product_form %}
+                    <div class="col-12 {% if field.name == 'description' %}col-md-12{% else %}col-md-6{% endif %}">
+                        <label class="form-label">{{ field.label }}</label>
+                        {{ field }}
+                    </div>
+                    {% endfor %}
+                    <div class="col-12 text-danger small" data-new-errors="product"></div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button><button type="submit" class="btn btn-dark">Guardar</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalNewSupply" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">Nuevo insumo</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <form data-ajax="true" data-admin-form="supply" method="post" novalidate>
+                {% csrf_token %}
+                <input type="hidden" name="form_kind" value="supply">
+                <div class="modal-body row g-3">
+                    {% for field in supply_form %}
+                    <div class="col-12 col-md-6">
+                        <label class="form-label">{{ field.label }}</label>
+                        {{ field }}
+                    </div>
+                    {% endfor %}
+                    <div class="col-12 text-danger small" data-new-errors="supply"></div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button><button type="submit" class="btn btn-outline-dark">Guardar</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalNewVariant" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">Nueva variante</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <form data-ajax="true" data-admin-form="variant" method="post" novalidate>
+                {% csrf_token %}
+                <input type="hidden" name="form_kind" value="variant">
+                <div class="modal-body row g-3">
+                    {% for field in variant_form %}
+                    <div class="col-12 col-md-6">
+                        <label class="form-label">{{ field.label }}</label>
+                        {{ field }}
+                    </div>
+                    {% endfor %}
+                    <div class="col-12 text-danger small" data-new-errors="variant"></div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button><button type="submit" class="btn btn-outline-secondary">Guardar</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalNewRecipe" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">Asignar insumo a producto</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <form data-ajax="true" data-admin-form="recipe" method="post" novalidate>
+                {% csrf_token %}
+                <input type="hidden" name="form_kind" value="recipe">
+                <div class="modal-body row g-3">
+                    {% for field in recipe_form %}
+                    <div class="col-12 col-md-6">
+                        <label class="form-label">{{ field.label }}</label>
+                        {{ field }}
+                    </div>
+                    {% endfor %}
+                    <div class="col-12 text-danger small" data-new-errors="recipe"></div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button><button type="submit" class="btn btn-outline-dark">Guardar</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalEditProduct" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">Editar producto</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <form id="formEditProduct" method="post" novalidate>
+                {% csrf_token %}
+                <div class="modal-body row g-3">
+                    <input type="hidden" id="editProductId">
+                    <div class="col-12 col-md-6"><label class="form-label">Nombre</label><input type="text" name="name" id="editProductName" class="form-control" required maxlength="120"></div>
+                    <div class="col-12 col-md-6"><label class="form-label">Categoria</label><select name="category" id="editProductCategory" class="form-select"><option value="COMIDA">Comida</option><option value="BEBIDA">Bebida</option></select></div>
+                    <div class="col-12 col-md-6"><label class="form-label">Precio</label><input type="number" name="price" id="editProductPrice" class="form-control" step="0.01" min="0" required></div>
+                    <div class="col-12 col-md-6"><label class="form-label">Existencia</label><input type="number" name="stock" id="editProductStock" class="form-control" min="0"></div>
+                    <div class="col-12"><label class="form-label">Descripcion</label><input type="text" name="description" id="editProductDescription" class="form-control" maxlength="255"></div>
+                    <div class="col-12"><div class="form-check"><input type="checkbox" name="is_active" id="editProductIsActive" class="form-check-input" value="true"><label class="form-check-label" for="editProductIsActive">Activo</label></div></div>
+                    <div id="editProductErrors" class="col-12 text-danger small"></div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button><button type="submit" class="btn btn-dark">Guardar cambios</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalEditVariant" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">Editar variante</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <form id="formEditVariant" method="post" novalidate>
+                {% csrf_token %}
+                <div class="modal-body row g-3">
+                    <input type="hidden" id="editVariantId">
+                    <input type="hidden" id="editVariantProductId">
+                    <div class="col-12 col-md-6"><label class="form-label">Variante</label><input type="text" name="name" id="editVariantName" class="form-control" required maxlength="120"></div>
+                    <div class="col-12 col-md-6"><label class="form-label">Agregado al precio</label><input type="number" name="price_delta" id="editVariantPriceDelta" class="form-control" step="0.01" min="0" required></div>
+                    <div class="col-12 col-md-6"><label class="form-label">Existencia</label><input type="number" name="stock" id="editVariantStock" class="form-control" min="0" required></div>
+                    <div class="col-12"><div class="form-check"><input type="checkbox" name="is_active" id="editVariantIsActive" class="form-check-input" value="true"><label class="form-check-label" for="editVariantIsActive">Activo</label></div></div>
+                    <div id="editVariantErrors" class="col-12 text-danger small"></div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button><button type="submit" class="btn btn-dark">Guardar cambios</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalEditSupply" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">Editar insumo</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <form id="formEditSupply" method="post" novalidate>
+                {% csrf_token %}
+                <div class="modal-body row g-3">
+                    <input type="hidden" id="editSupplyId">
+                    <div class="col-12"><label class="form-label">Nombre</label><input type="text" name="name" id="editSupplyName" class="form-control" required maxlength="120"></div>
+                    <div class="col-12"><div class="form-check"><input type="checkbox" name="is_available" id="editSupplyIsAvailable" class="form-check-input" value="true"><label class="form-check-label" for="editSupplyIsAvailable">Hay existencia</label></div></div>
+                    <div id="editSupplyErrors" class="col-12 text-danger small"></div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button><button type="submit" class="btn btn-dark">Guardar cambios</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalEditRecipe" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">Editar insumo por producto</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <form id="formEditRecipe" method="post" novalidate>
+                {% csrf_token %}
+                <div class="modal-body row g-3">
+                    <input type="hidden" id="editRecipeId">
+                    <div class="col-12 col-md-6">
+                        <label class="form-label">Producto</label>
+                        <select name="product" id="editRecipeProduct" class="form-select" required>
+                            {% for product in products %}
+                            <option value="{{ product.pk }}">{{ product.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <label class="form-label">Insumo</label>
+                        <select name="supply" id="editRecipeSupply" class="form-select" required>
+                            {% for supply in supplies %}
+                            <option value="{{ supply.pk }}">{{ supply.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div id="editRecipeErrors" class="col-12 text-danger small"></div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button><button type="submit" class="btn btn-dark">Guardar cambios</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalDeleteVariant" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">Eliminar variante</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <form id="formDeleteVariant" method="post" novalidate>
+                {% csrf_token %}
+                <div class="modal-body">
+                    <input type="hidden" id="deleteVariantId">
+                    <input type="hidden" id="deleteVariantProductId">
+                    <p class="mb-2">Esta acción eliminará la variante seleccionada.</p>
+                    <p class="text-danger small mb-0">No se puede deshacer.</p>
+                    <div id="deleteVariantErrors" class="text-danger small mt-2"></div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button><button type="submit" class="btn btn-danger">Eliminar</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalDeleteRecipe" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">Eliminar insumo por producto</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <form id="formDeleteRecipe" method="post" novalidate>
+                {% csrf_token %}
+                <div class="modal-body">
+                    <input type="hidden" id="deleteRecipeId">
+                    <p class="mb-2">Se eliminara esta relacion de insumo con producto.</p>
+                    <p class="text-danger small mb-0">No se puede deshacer.</p>
+                    <div id="deleteRecipeErrors" class="text-danger small mt-2"></div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button><button type="submit" class="btn btn-danger">Eliminar</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    if (!window.bootstrap || !window.bootstrap.Modal) {
+        console.error('Bootstrap no esta disponible para inicializar modales.');
+        return;
+    }
+
+    function closeModalForForm(form) {
+        const modalEl = form.closest('.modal');
+        if (!modalEl) {
+            return;
+        }
+        const instance = bootstrap.Modal.getInstance(modalEl) || bootstrap.Modal.getOrCreateInstance(modalEl);
+        instance.hide();
+    }
+
+    function jsonErrorsToText(errors) {
+        if (!errors) {
+            return 'No se pudo guardar.';
+        }
+        return Object.values(errors).flat().map(function (item) { return item.message; }).join(' | ');
+    }
+
+    function upsertSelectOption(select, value, label) {
+        if (!select) {
+            return;
+        }
+        const normalizedValue = String(value);
+        const existing = Array.from(select.options).find(function (opt) { return opt.value === normalizedValue; });
+        if (existing) {
+            existing.textContent = label;
+            return;
+        }
+        const option = document.createElement('option');
+        option.value = normalizedValue;
+        option.textContent = label;
+        select.appendChild(option);
+    }
+
+    function buildVariantRowHtml(variant) {
+        return '<td class="text-start">' + variant.product + '</td>' +
+            '<td class="text-start">' + variant.name + '</td>' +
+            '<td class="text-end">$' + variant.price_delta + '</td>' +
+            '<td class="text-center">' + variant.stock + '</td>' +
+            '<td><div class="d-flex gap-2 admin-table-actions"><button class="btn btn-sm btn-outline-secondary btn-edit-variant" type="button">Editar</button><button class="btn btn-sm btn-outline-danger btn-delete-variant" type="button">Eliminar</button></div></td>';
+    }
+
+    function bindSalesFilter() {
+        const salesForm = document.getElementById('workdayFilterForm');
+        const salesSelect = document.getElementById('workdayFilter');
+        if (!salesForm || !salesSelect) {
+            return;
+        }
+
+        const submitSalesFilter = function () {
+            const card = document.getElementById('salesCard');
+            if (!card) {
+                salesForm.submit();
+                return;
+            }
+
+            const selectedValue = salesSelect.value || '';
+            const url = new URL(window.location.href);
+            if (selectedValue) {
+                url.searchParams.set('workday', selectedValue);
+            } else {
+                url.searchParams.delete('workday');
+            }
+
+            fetch(url.toString(), {
+                method: 'GET',
+                headers: {'X-Requested-With': 'XMLHttpRequest'},
+            })
+            .then(function (response) {
+                if (!response.ok) {
+                    throw new Error('No se pudo actualizar ventas.');
+                }
+                return response.text();
+            })
+            .then(function (html) {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+                const nextCard = doc.getElementById('salesCard');
+                if (!nextCard) {
+                    throw new Error('No se encontro el bloque de ventas.');
+                }
+                card.innerHTML = nextCard.innerHTML;
+                window.history.replaceState({}, '', url.toString());
+                bindSalesFilter();
+            })
+            .catch(function () {
+                salesForm.submit();
+            });
+        };
+
+        salesForm.addEventListener('submit', function (event) {
+            event.preventDefault();
+            submitSalesFilter();
+        });
+        salesSelect.addEventListener('change', submitSalesFilter);
+    }
+
+    bindSalesFilter();
+
+    document.querySelectorAll('form[data-admin-form]').forEach(function (form) {
+        const formKind = form.dataset.adminForm;
+        form.addEventListener('ajax:success', function (ev) {
+            const payload = ev.detail || {};
+            if (!payload.ok) {
+                if (window.showAppDialog) {
+                    window.showAppDialog(payload.message || jsonErrorsToText(payload.errors), 'danger');
+                }
+                return;
+            }
+
+            closeModalForForm(form);
+
+            if (formKind === 'product' && payload.product) {
+                const p = payload.product;
+                const tbody = document.getElementById('product-table-body');
+                const empty = tbody.querySelector('td[colspan]');
+                if (empty) empty.closest('tr').remove();
+                const row = document.createElement('tr');
+                row.setAttribute('data-product-id', p.id);
+                row.setAttribute('data-name', p.name);
+                row.setAttribute('data-category', p.category_value || '');
+                row.setAttribute('data-price', p.price);
+                row.setAttribute('data-description', p.description || '');
+                row.setAttribute('data-is-active', p.is_active ? 'true' : 'false');
+                row.setAttribute('data-stock', p.stock);
+                row.setAttribute('data-has-variants', 'false');
+                row.innerHTML = '<td>' + p.name + '</td><td>' + p.category + '</td><td>$' + p.price + '</td><td data-stock-cell>' + p.stock + '</td><td><button class="btn btn-sm btn-outline-secondary btn-edit-product" type="button">Editar</button></td>';
+                tbody.prepend(row);
+
+                // Actualizar combos de producto en formularios de variante y receta.
+                document.querySelectorAll('form[data-admin-form="variant"] select[name$="-product"], form[data-admin-form="recipe"] select[name$="-product"]').forEach(function (select) {
+                    upsertSelectOption(select, p.id, p.name);
+                });
+                upsertSelectOption(document.getElementById('editRecipeProduct'), p.id, p.name);
+
+                form.reset();
+            }
+
+            if (formKind === 'supply' && payload.supply) {
+                const s = payload.supply;
+                const tbody = document.getElementById('supply-table-body');
+                const empty = tbody.querySelector('td[colspan]');
+                if (empty) empty.closest('tr').remove();
+                const row = document.createElement('tr');
+                row.setAttribute('data-supply-id', s.id);
+                row.setAttribute('data-name', s.name);
+                row.setAttribute('data-is-available', s.is_available ? 'true' : 'false');
+                if (!s.is_available) {
+                    row.className = 'table-warning';
+                }
+                row.innerHTML = '<td>' + s.name + '</td><td>' + (s.is_available ? 'Si' : 'No') + '</td><td><button class="btn btn-sm btn-outline-secondary btn-edit-supply" type="button">Editar</button></td>';
+                tbody.prepend(row);
+                form.reset();
+            }
+
+            if (formKind === 'variant' && payload.variant) {
+                const v = payload.variant;
+                const tbody = document.getElementById('variant-table-body');
+                const empty = tbody.querySelector('td[colspan]');
+                if (empty) empty.closest('tr').remove();
+                const row = document.createElement('tr');
+                row.setAttribute('data-variant-id', v.id);
+                row.setAttribute('data-product-id', v.product_id);
+                row.setAttribute('data-name', v.name);
+                row.setAttribute('data-price-delta', v.price_delta);
+                row.setAttribute('data-stock', v.stock);
+                row.setAttribute('data-is-active', v.is_active ? 'true' : 'false');
+                row.innerHTML = buildVariantRowHtml(v);
+                tbody.prepend(row);
+
+                const productRow = document.querySelector('[data-product-id="' + v.product_id + '"]');
+                if (productRow) {
+                    const stockCell = productRow.querySelector('[data-stock-cell]');
+                    if (stockCell) {
+                        stockCell.textContent = v.product_stock;
+                    }
+                    productRow.dataset.stock = v.product_stock;
+                    productRow.dataset.hasVariants = 'true';
+                }
+                form.reset();
+            }
+
+            if (formKind === 'recipe' && payload.recipe) {
+                const r = payload.recipe;
+                const tbody = document.getElementById('recipe-table-body');
+                const empty = tbody.querySelector('td[colspan]');
+                if (empty) empty.closest('tr').remove();
+                const row = document.createElement('tr');
+                row.setAttribute('data-recipe-id', r.id);
+                row.setAttribute('data-product-id', r.product_id);
+                row.setAttribute('data-supply-id', r.supply_id);
+                row.innerHTML = '<td>' + r.product + '</td><td>' + r.supply + '</td><td class="d-flex gap-2"><button class="btn btn-sm btn-outline-secondary btn-edit-recipe" type="button">Editar</button><button class="btn btn-sm btn-outline-danger btn-delete-recipe" type="button">Eliminar</button></td>';
+                tbody.prepend(row);
+                form.reset();
+            }
+        });
+    });
+
+    const modalEditProduct = bootstrap.Modal.getOrCreateInstance(document.getElementById('modalEditProduct'));
+    const modalEditVariant = bootstrap.Modal.getOrCreateInstance(document.getElementById('modalEditVariant'));
+    const modalEditSupply = bootstrap.Modal.getOrCreateInstance(document.getElementById('modalEditSupply'));
+    const modalEditRecipe = bootstrap.Modal.getOrCreateInstance(document.getElementById('modalEditRecipe'));
+    const modalDeleteVariant = bootstrap.Modal.getOrCreateInstance(document.getElementById('modalDeleteVariant'));
+    const modalDeleteRecipe = bootstrap.Modal.getOrCreateInstance(document.getElementById('modalDeleteRecipe'));
+
+    document.getElementById('product-table-body').addEventListener('click', function (e) {
+        const btn = e.target.closest('.btn-edit-product');
+        if (!btn) {
+            return;
+        }
+        const row = btn.closest('tr');
+        document.getElementById('editProductId').value = row.dataset.productId;
+        document.getElementById('editProductName').value = row.dataset.name;
+        document.getElementById('editProductCategory').value = row.dataset.category;
+        document.getElementById('editProductPrice').value = row.dataset.price;
+        document.getElementById('editProductDescription').value = row.dataset.description || '';
+        document.getElementById('editProductIsActive').checked = row.dataset.isActive === 'true';
+        const stockInput = document.getElementById('editProductStock');
+        stockInput.value = row.dataset.stock;
+        stockInput.disabled = row.dataset.hasVariants === 'true';
+        modalEditProduct.show();
+    });
+
+    document.getElementById('formEditProduct').addEventListener('submit', function (e) {
+        e.preventDefault();
+        const pk = document.getElementById('editProductId').value;
+        const data = new FormData(e.target);
+        if (!document.getElementById('editProductIsActive').checked) {
+            data.delete('is_active');
+        }
+        fetch('/administrador/producto/' + pk + '/editar/', {
+            method: 'POST',
+            headers: {'X-Requested-With': 'XMLHttpRequest'},
+            body: data,
+        })
+        .then(function (response) { return response.json(); })
+        .then(function (payload) {
+            if (!payload.ok) {
+                if (window.showAppDialog) {
+                    window.showAppDialog(jsonErrorsToText(payload.errors), 'danger');
+                }
+                return;
+            }
+            const p = payload.product;
+            const row = document.querySelector('[data-product-id="' + p.id + '"]');
+            if (row) {
+                row.cells[0].textContent = p.name;
+                row.cells[1].textContent = p.category;
+                row.cells[2].textContent = '$' + p.price;
+                row.cells[3].textContent = p.stock;
+                row.dataset.name = p.name;
+                row.dataset.category = p.category_value || row.dataset.category;
+                row.dataset.price = p.price;
+                row.dataset.description = p.description || '';
+                row.dataset.isActive = p.is_active ? 'true' : 'false';
+                row.dataset.stock = p.stock;
+            }
+            if (window.showAppDialog) {
+                window.showAppDialog('Producto actualizado correctamente.', 'success');
+            }
+            modalEditProduct.hide();
+        });
+    });
+
+    document.getElementById('variant-table-body').addEventListener('click', function (e) {
+        const btn = e.target.closest('.btn-edit-variant');
+        if (!btn) {
+            return;
+        }
+        const row = btn.closest('tr');
+        document.getElementById('editVariantId').value = row.dataset.variantId;
+        document.getElementById('editVariantProductId').value = row.dataset.productId;
+        document.getElementById('editVariantName').value = row.dataset.name;
+        document.getElementById('editVariantPriceDelta').value = row.dataset.priceDelta;
+        document.getElementById('editVariantStock').value = row.dataset.stock;
+        document.getElementById('editVariantIsActive').checked = row.dataset.isActive === 'true';
+        modalEditVariant.show();
+    });
+
+    document.getElementById('formEditVariant').addEventListener('submit', function (e) {
+        e.preventDefault();
+        const pk = document.getElementById('editVariantId').value;
+        const productId = document.getElementById('editVariantProductId').value;
+        const data = new FormData(e.target);
+        if (!document.getElementById('editVariantIsActive').checked) {
+            data.delete('is_active');
+        }
+        fetch('/administrador/variante/' + pk + '/editar/', {
+            method: 'POST',
+            headers: {'X-Requested-With': 'XMLHttpRequest'},
+            body: data,
+        })
+        .then(function (response) { return response.json(); })
+        .then(function (payload) {
+            if (!payload.ok) {
+                if (window.showAppDialog) {
+                    window.showAppDialog(jsonErrorsToText(payload.errors), 'danger');
+                }
+                return;
+            }
+            const v = payload.variant;
+            const row = document.querySelector('[data-variant-id="' + v.id + '"]');
+            if (row) {
+                row.innerHTML = buildVariantRowHtml(v);
+                row.dataset.name = v.name;
+                row.dataset.priceDelta = v.price_delta;
+                row.dataset.stock = v.stock;
+                row.dataset.isActive = v.is_active ? 'true' : 'false';
+            }
+            const productRow = document.querySelector('[data-product-id="' + productId + '"]');
+            if (productRow) {
+                const stockCell = productRow.querySelector('[data-stock-cell]');
+                if (stockCell) {
+                    stockCell.textContent = v.product_stock;
+                }
+                productRow.dataset.stock = v.product_stock;
+            }
+            if (window.showAppDialog) {
+                window.showAppDialog('Variante actualizada correctamente.', 'success');
+            }
+            modalEditVariant.hide();
+        });
+    });
+
+    document.getElementById('supply-table-body').addEventListener('click', function (e) {
+        const btn = e.target.closest('.btn-edit-supply');
+        if (!btn) {
+            return;
+        }
+        const row = btn.closest('tr');
+        document.getElementById('editSupplyId').value = row.dataset.supplyId;
+        document.getElementById('editSupplyName').value = row.dataset.name;
+        document.getElementById('editSupplyIsAvailable').checked = row.dataset.isAvailable === 'true';
+        modalEditSupply.show();
+    });
+
+    document.getElementById('formEditSupply').addEventListener('submit', function (e) {
+        e.preventDefault();
+        const pk = document.getElementById('editSupplyId').value;
+        const data = new FormData(e.target);
+        if (!document.getElementById('editSupplyIsAvailable').checked) {
+            data.delete('is_available');
+        }
+        fetch('/administrador/insumo/' + pk + '/editar/', {
+            method: 'POST',
+            headers: {'X-Requested-With': 'XMLHttpRequest'},
+            body: data,
+        })
+        .then(function (response) { return response.json(); })
+        .then(function (payload) {
+            if (!payload.ok) {
+                if (window.showAppDialog) {
+                    window.showAppDialog(jsonErrorsToText(payload.errors), 'danger');
+                }
+                return;
+            }
+            const s = payload.supply;
+            const row = document.querySelector('[data-supply-id="' + s.id + '"]');
+            if (row) {
+                row.cells[0].textContent = s.name;
+                row.cells[1].textContent = s.is_available ? 'Si' : 'No';
+                row.dataset.name = s.name;
+                row.dataset.isAvailable = s.is_available ? 'true' : 'false';
+                row.classList.toggle('table-warning', !s.is_available);
+            }
+            if (window.showAppDialog) {
+                window.showAppDialog('Insumo actualizado correctamente.', 'success');
+            }
+            modalEditSupply.hide();
+        });
+    });
+
+    document.getElementById('recipe-table-body').addEventListener('click', function (e) {
+        const btn = e.target.closest('.btn-edit-recipe');
+        if (!btn) {
+            return;
+        }
+        const row = btn.closest('tr');
+        document.getElementById('editRecipeId').value = row.dataset.recipeId;
+        document.getElementById('editRecipeProduct').value = row.dataset.productId;
+        document.getElementById('editRecipeSupply').value = row.dataset.supplyId;
+        modalEditRecipe.show();
+    });
+
+    document.getElementById('formEditRecipe').addEventListener('submit', function (e) {
+        e.preventDefault();
+        const pk = document.getElementById('editRecipeId').value;
+        const data = new FormData(e.target);
+        fetch('/administrador/receta/' + pk + '/editar/', {
+            method: 'POST',
+            headers: {'X-Requested-With': 'XMLHttpRequest'},
+            body: data,
+        })
+        .then(function (response) { return response.json(); })
+        .then(function (payload) {
+            if (!payload.ok) {
+                if (window.showAppDialog) {
+                    window.showAppDialog(jsonErrorsToText(payload.errors), 'danger');
+                }
+                return;
+            }
+            const r = payload.recipe;
+            const row = document.querySelector('[data-recipe-id="' + r.id + '"]');
+            if (row) {
+                row.cells[0].textContent = r.product;
+                row.cells[1].textContent = r.supply;
+                row.dataset.productId = r.product_id;
+                row.dataset.supplyId = r.supply_id;
+            }
+            if (window.showAppDialog) {
+                window.showAppDialog('Insumo por producto actualizado correctamente.', 'success');
+            }
+            modalEditRecipe.hide();
+        });
+    });
+
+    document.getElementById('variant-table-body').addEventListener('click', function (e) {
+        const btn = e.target.closest('.btn-delete-variant');
+        if (!btn) {
+            return;
+        }
+        const row = btn.closest('tr');
+        document.getElementById('deleteVariantId').value = row.dataset.variantId;
+        document.getElementById('deleteVariantProductId').value = row.dataset.productId;
+        modalDeleteVariant.show();
+    });
+
+    document.getElementById('formDeleteVariant').addEventListener('submit', function (e) {
+        e.preventDefault();
+        const variantId = document.getElementById('deleteVariantId').value;
+        const productId = document.getElementById('deleteVariantProductId').value;
+        const data = new FormData(e.target);
+        fetch('/administrador/variante/' + variantId + '/eliminar/', {
+            method: 'POST',
+            headers: {'X-Requested-With': 'XMLHttpRequest'},
+            body: data,
+        })
+        .then(function (response) { return response.json(); })
+        .then(function (payload) {
+            if (!payload.ok) {
+                if (window.showAppDialog) {
+                    window.showAppDialog(payload.message || 'No se pudo eliminar la variante.', 'danger');
+                }
+                return;
+            }
+            const row = document.querySelector('[data-variant-id="' + variantId + '"]');
+            if (row) {
+                row.remove();
+            }
+            const tbody = document.getElementById('variant-table-body');
+            if (!tbody.querySelector('tr')) {
+                const emptyRow = document.createElement('tr');
+                emptyRow.innerHTML = '<td colspan="5" class="text-muted">Sin variantes registradas.</td>';
+                tbody.appendChild(emptyRow);
+            }
+            const productRow = document.querySelector('[data-product-id="' + productId + '"]');
+            if (productRow) {
+                const stockCell = productRow.querySelector('[data-stock-cell]');
+                if (stockCell) {
+                    stockCell.textContent = payload.product_stock;
+                }
+                productRow.dataset.stock = payload.product_stock;
+            }
+            if (window.showAppDialog) {
+                window.showAppDialog('Variante eliminada correctamente.', 'success');
+            }
+            modalDeleteVariant.hide();
+        });
+    });
+
+    document.getElementById('recipe-table-body').addEventListener('click', function (e) {
+        const btn = e.target.closest('.btn-delete-recipe');
+        if (!btn) {
+            return;
+        }
+        const row = btn.closest('tr');
+        document.getElementById('deleteRecipeId').value = row.dataset.recipeId;
+        modalDeleteRecipe.show();
+    });
+
+    document.getElementById('formDeleteRecipe').addEventListener('submit', function (e) {
+        e.preventDefault();
+        const recipeId = document.getElementById('deleteRecipeId').value;
+        const data = new FormData(e.target);
+        fetch('/administrador/receta/' + recipeId + '/eliminar/', {
+            method: 'POST',
+            headers: {'X-Requested-With': 'XMLHttpRequest'},
+            body: data,
+        })
+        .then(function (response) { return response.json(); })
+        .then(function (payload) {
+            if (!payload.ok) {
+                if (window.showAppDialog) {
+                    window.showAppDialog(payload.message || 'No se pudo eliminar el insumo por producto.', 'danger');
+                }
+                return;
+            }
+            const row = document.querySelector('[data-recipe-id="' + recipeId + '"]');
+            if (row) {
+                row.remove();
+            }
+            const tbody = document.getElementById('recipe-table-body');
+            if (!tbody.querySelector('tr')) {
+                const emptyRow = document.createElement('tr');
+                emptyRow.innerHTML = '<td colspan="3" class="text-muted">Sin insumos asignados.</td>';
+                tbody.appendChild(emptyRow);
+            }
+            if (window.showAppDialog) {
+                window.showAppDialog('Insumo por producto eliminado correctamente.', 'success');
+            }
+            modalDeleteRecipe.hide();
+        });
+    });
+});
+</script>
+{% endblock %}
