@@ -32,7 +32,7 @@ El proyecto centraliza la operación del turno en una interfaz web con módulos 
 ## Stack técnico
 
 - Python 3
-- Django 6.0.4
+- Django 5.2.13
 - MySQL como base de datos principal
 - SQLite para pruebas mediante `bar.settings_test`
 - PyMySQL y mysqlclient como conectores disponibles
@@ -114,7 +114,7 @@ Entidades principales:
 
 ## Requisitos
 
-- Python 3.12 o compatible con Django 6
+- Python 3.10 o superior compatible con Django 5.2
 - MySQL accesible en `127.0.0.1:3306` para desarrollo local con la configuración por defecto
 - Variables de entorno para producción o para credenciales distintas a las locales
 

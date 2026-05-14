@@ -1,7 +1,4 @@
-"""Django settings for bar project."""
-
 import os
-from pathlib import Path
 
 
 def env_bool(name, default=False):
@@ -10,27 +7,49 @@ def env_bool(name, default=False):
         return default
     return value.strip().lower() in {'1', 'true', 'yes', 'on'}
 
+SESSION_EXPIRE_AT_BROWSER_CLOSE = False
+SESSION_COOKIE_AGE = 31536000
+SESSION_SAVE_EVERY_REQUEST = True
 
-def env_list(name, default=None):
-    value = os.environ.get(name)
-    if not value:
-        return list(default or [])
-    return [item.strip() for item in value.split(',') if item.strip()]
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'sandbox.smtp.mailtrap.io'
+EMAIL_HOST_USER = 'd42925875de988'
+EMAIL_HOST_PASSWORD = '********d5a0'
+EMAIL_PORT = '2525'
+EMAIL_USE_TLS = True
+
+from operator import truediv
+from pathlib import Path
+from django.forms.utils import flatatt
+
+from django.template.defaultfilters import truncatechars
+from django.utils import timezone
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Quick-start development settings - unsuitable for production
+# See https://docs.djangoproject.com/en/4.0/howto/deployment/checklist/
 
+# SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = 'django-insecure-g94__m*&7fvv2avmws^ez%))yq^=t%^o6a@#6^vz%%$q65l3(z'
+
+# SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env_bool('BAR_DEBUG', default=True)
-SECRET_KEY = os.environ.get('BAR_SECRET_KEY', 'dev-secret-key-change-me')
 
-if not DEBUG and SECRET_KEY == 'dev-secret-key-change-me':
-    raise RuntimeError('Define BAR_SECRET_KEY para ejecutar con BAR_DEBUG=False.')
+ALLOWED_HOSTS = [
+    'bar.iagmexico.com',
+    'www.bar.iagmexico.com',
+    '108.175.4.49',
+    '127.0.0.1',
+    'localhost',
+    '0.0.0.0',
+]
 
-default_hosts = ['127.0.0.1', 'localhost'] if not DEBUG else ['*']
-ALLOWED_HOSTS = env_list('BAR_ALLOWED_HOSTS', default=default_hosts)
-CSRF_TRUSTED_ORIGINS = env_list('BAR_CSRF_TRUSTED_ORIGINS')
+CSRF_TRUSTED_ORIGINS = ['https://bar.iagmexico.com','https://www.bar.iagmexico.com']
 
+DECIMAL_SEPARATOR = ',' 
+USE_THOUSAND_SEPARATOR = True
 
 # Application definition
 
@@ -139,9 +158,9 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
-SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-SESSION_COOKIE_SECURE = env_bool('BAR_SESSION_COOKIE_SECURE', default=not DEBUG)
-CSRF_COOKIE_SECURE = env_bool('BAR_CSRF_COOKIE_SECURE', default=not DEBUG)
+#SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+#SESSION_COOKIE_SECURE = env_bool('BAR_SESSION_COOKIE_SECURE', default=not DEBUG)
+#CSRF_COOKIE_SECURE = env_bool('BAR_CSRF_COOKIE_SECURE', default=not DEBUG)
 
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'home'

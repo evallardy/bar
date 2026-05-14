@@ -2,6 +2,10 @@
 
 {% block title %}{{ title }} | Bar{% endblock %}
 
+{% block extra_head %}
+<meta name="bar-auto-refresh" content="10">
+{% endblock %}
+
 {% block content %}
 <section class="bar-page-header rounded-4 p-4 p-lg-5 mb-4 overflow-hidden">
 <div>

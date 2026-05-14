@@ -8,7 +8,9 @@ Thumbs.db
 .vscode/
 staticfiles/
 media/
+backups/*.sql
 *.log
 .env
 .env.*
 !.env.example
+bar/settings.py

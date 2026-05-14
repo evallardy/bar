@@ -1,12 +1,14 @@
 from collections import defaultdict
 from decimal import Decimal, InvalidOperation
+from datetime import timedelta
 
+from django.contrib.sessions.models import Session
 from django.db import transaction
 from django.db.models import Count, DecimalField, ExpressionWrapper, F, OuterRef, Q, Subquery, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
-from .models import AreaChoices, ItemPaidStatusChoices, ItemStatusChoices, Order, OrderItem, OrderItemPayment, OrderPayment, OrderStatusChoices, Product, ProductCategoryChoices, ProductVariant, Supply, WorkDay, WorkDayStatusChoices
+from .models import AreaChoices, DraftOrderReservation, ItemPaidStatusChoices, ItemStatusChoices, Order, OrderItem, OrderItemPayment, OrderItemPriceChange, OrderPayment, OrderStatusChoices, Product, ProductCategoryChoices, ProductVariant, Supply, WorkDay, WorkDayStatusChoices
 
 
 HOME_MODULES = [
@@ -19,6 +21,28 @@ HOME_MODULES = [
 ]
 
 BAR_AREAS = ['Cocina', 'Bar', 'Caja', 'Almacén']
+DRAFT_RESERVATION_MINUTES = 10
+
+
+def _restore_item_stock(product, variant, quantity):
+	if variant:
+		variant.stock += quantity
+		variant.save(update_fields=['stock'])
+		return
+	product.stock += quantity
+	product.save(update_fields=['stock'])
+
+
+@transaction.atomic
+def cleanup_stale_draft_reservations():
+	now = timezone.now()
+	stale_reservations = list(
+		DraftOrderReservation.objects.select_related('product', 'variant').select_for_update().filter(expires_at__lte=now)
+	)
+	for reservation in stale_reservations:
+		_restore_item_stock(reservation.product, reservation.variant, reservation.quantity)
+	DraftOrderReservation.objects.filter(id__in=[reservation.id for reservation in stale_reservations]).delete()
+
 def get_home_metrics():
 	return {
 		'mesas abiertas': Order.objects.filter(status=OrderStatusChoices.ABIERTA).count(),
@@ -92,6 +116,7 @@ def close_workday(user):
 	workday.closed_by = user
 	workday.pending_orders_on_close = pending_orders
 	workday.save(update_fields=['status', 'closed_at', 'closed_by', 'pending_orders_on_close'])
+	Session.objects.all().delete()
 	return workday, pending_orders, True
 
 
@@ -119,6 +144,7 @@ def get_orders_with_items():
 
 def build_available_product_catalog():
 	"""Retorna solo productos/variantes con inventario disponible."""
+	cleanup_stale_draft_reservations()
 	products = Product.objects.filter(is_active=True).prefetch_related('variants', 'product_supplies__supply')
 	catalog = []
 	for product in products:
@@ -138,8 +164,9 @@ def build_available_product_catalog():
 				'id': product.pk,
 				'name': product.name,
 				'price': str(product.price),
+				'stock': product.stock,
 				'variants': [
-					{'id': variant.pk, 'name': variant.name, 'price_delta': str(variant.price_delta)}
+					{'id': variant.pk, 'name': variant.name, 'price_delta': str(variant.price_delta), 'stock': variant.stock}
 					for variant in available_variants
 				],
 				'supplies': [
@@ -149,6 +176,68 @@ def build_available_product_catalog():
 			}
 		)
 	return catalog
+
+
+@transaction.atomic
+def reserve_draft_item(session_key, product_id, variant_id, quantity):
+	cleanup_stale_draft_reservations()
+	product, variant, unit_price, reserved_quantity = _reserve_item_stock(product_id, variant_id, quantity)
+	return DraftOrderReservation.objects.create(
+		session_key=session_key,
+		product=product,
+		variant=variant,
+		quantity=reserved_quantity,
+		unit_price=Decimal(unit_price),
+		expires_at=timezone.now() + timedelta(minutes=DRAFT_RESERVATION_MINUTES),
+	)
+
+
+@transaction.atomic
+def release_draft_item(session_key, reservation_token):
+	cleanup_stale_draft_reservations()
+	reservation = DraftOrderReservation.objects.select_related('product', 'variant').select_for_update().filter(
+		session_key=session_key,
+		reservation_token=reservation_token,
+	).first()
+	if not reservation:
+		return False
+	_restore_item_stock(reservation.product, reservation.variant, reservation.quantity)
+	reservation.delete()
+	return True
+
+
+@transaction.atomic
+def release_all_draft_items(session_key):
+	cleanup_stale_draft_reservations()
+	reservations = list(
+		DraftOrderReservation.objects.select_related('product', 'variant').select_for_update().filter(session_key=session_key)
+	)
+	for reservation in reservations:
+		_restore_item_stock(reservation.product, reservation.variant, reservation.quantity)
+	DraftOrderReservation.objects.filter(id__in=[reservation.id for reservation in reservations]).delete()
+	return len(reservations)
+
+
+def _consume_draft_reservation(session_key, reservation_token, product_id, variant_id, quantity):
+	requested_quantity = max(int(quantity or 1), 1)
+	reservation = DraftOrderReservation.objects.select_related('product', 'variant').select_for_update().filter(
+		session_key=session_key,
+		reservation_token=reservation_token,
+	).first()
+	if not reservation:
+		raise ValueError('La reserva del producto ya expiró o no está disponible. Vuelve a agregarlo a la comanda.')
+	if reservation.product_id != product_id:
+		raise ValueError('El producto reservado ya no coincide con el borrador actual.')
+	if (reservation.variant_id or None) != (variant_id or None):
+		raise ValueError('La variante reservada ya no coincide con el borrador actual.')
+	if reservation.quantity != requested_quantity:
+		raise ValueError('La cantidad reservada cambió. Vuelve a agregar el producto para confirmar el inventario.')
+	product = reservation.product
+	variant = reservation.variant
+	unit_price = reservation.unit_price
+	reserved_quantity = reservation.quantity
+	reservation.delete()
+	return product, variant, unit_price, reserved_quantity
 
 
 def _reserve_item_stock(product_id, variant_id, quantity):
@@ -185,7 +274,7 @@ def get_order_detail_queryset():
 	active_workday = get_active_workday()
 	if not active_workday:
 		return Order.objects.none()
-	return Order.objects.filter(workday=active_workday).prefetch_related('items__product')
+	return Order.objects.filter(workday=active_workday).prefetch_related('items__product', 'items__price_changes__changed_by')
 
 
 def group_order_items(order):
@@ -256,6 +345,40 @@ def get_order_payment_summary(order):
 
 
 @transaction.atomic
+def update_order_item_unit_price(item_id, unit_price, changed_by=None, note=''):
+	try:
+		new_unit_price = Decimal(unit_price or '0').quantize(Decimal('0.01'))
+	except (InvalidOperation, TypeError):
+		raise ValueError('Captura un precio válido.')
+	note = (note or '').strip()
+
+	if new_unit_price < 0:
+		raise ValueError('El precio no puede ser negativo.')
+
+	item = OrderItem.objects.select_related('order', 'product').select_for_update().get(pk=item_id)
+	if item.order.status != OrderStatusChoices.ABIERTA:
+		raise ValueError('Solo se puede cambiar el precio en comandas abiertas.')
+	if item.status == ItemStatusChoices.CANCELADO:
+		raise ValueError('No se puede cambiar el precio de un producto cancelado.')
+	if item.paid_status == ItemPaidStatusChoices.PAGADO:
+		raise ValueError('No se puede cambiar el precio de un producto ya pagado.')
+
+	previous_unit_price = item.unit_price
+	item.unit_price = new_unit_price
+	item.save(update_fields=['unit_price'])
+	price_change = OrderItemPriceChange.objects.create(
+		order_item=item,
+		previous_unit_price=previous_unit_price,
+		new_unit_price=new_unit_price,
+		note=note,
+		changed_by=changed_by,
+	)
+	order = item.order
+	summary = get_order_payment_summary(order)
+	return item, summary, price_change
+
+
+@transaction.atomic
 def process_order_payment(order_id, item_ids, cash_amount, card_amount, transfer_amount, user):
 	order = Order.objects.select_for_update().select_related('workday').get(pk=order_id)
 	if order.status != OrderStatusChoices.ABIERTA:
@@ -315,7 +438,8 @@ def process_order_payment(order_id, item_ids, cash_amount, card_amount, transfer
 		OrderItemPayment.objects.create(payment=payment, order_item=item, amount=item.total)
 		item.paid_status = ItemPaidStatusChoices.PAGADO
 		item.paid_at = payment.created_at
-	OrderItem.objects.bulk_update(items, ['paid_status', 'paid_at'])
+		item.paid_by = user
+	OrderItem.objects.bulk_update(items, ['paid_status', 'paid_at', 'paid_by'])
 
 	summary = get_order_payment_summary(order)
 	return {
@@ -340,12 +464,14 @@ def create_order_from_forms(form, formset, user):
 	for item in items:
 		item.order = order
 		item.unit_price = item.product.price
+		item.commanded_by = user
 		item.save()
 	return order
 
 
 @transaction.atomic
-def create_order_from_payload(form, items_payload, user):
+def create_order_from_payload(form, items_payload, user, session_key=None):
+	cleanup_stale_draft_reservations()
 	workday = get_active_workday()
 	if not workday:
 		raise ValueError('No hay un día de trabajo abierto. Abre el día de trabajo para crear comandas.')
@@ -360,11 +486,28 @@ def create_order_from_payload(form, items_payload, user):
 	for raw_item in items_payload:
 		product_id = raw_item.get('product_id')
 		variant_id = raw_item.get('variant_id')
+		reservation_token = raw_item.get('reservation_token')
 		requested_quantity = raw_item.get('quantity') or 1
 		notes = (raw_item.get('notes') or '').strip()
 		supply_names = raw_item.get('supply_names') or []
 
-		product, variant, unit_price, quantity = _reserve_item_stock(product_id, variant_id, requested_quantity)
+		if product_id is None:
+			raise ValueError('Uno de los productos del borrador ya no es válido.')
+		product_id = int(product_id)
+		variant_id = int(variant_id) if variant_id else None
+
+		if reservation_token:
+			if not session_key:
+				raise ValueError('La sesión del borrador no está disponible. Vuelve a capturar la comanda.')
+			product, variant, unit_price, quantity = _consume_draft_reservation(
+				session_key,
+				reservation_token,
+				product_id,
+				variant_id,
+				requested_quantity,
+			)
+		else:
+			product, variant, unit_price, quantity = _reserve_item_stock(product_id, variant_id, requested_quantity)
 
 		extra_notes = []
 		if variant:
@@ -380,6 +523,7 @@ def create_order_from_payload(form, items_payload, user):
 			order=order,
 			product=product,
 			variant=variant,
+			commanded_by=user,
 			quantity=quantity,
 			unit_price=Decimal(unit_price),
 			notes=notes,
@@ -390,7 +534,7 @@ def create_order_from_payload(form, items_payload, user):
 
 
 @transaction.atomic
-def add_items_to_order(order, items_payload):
+def add_items_to_order(order, items_payload, user=None):
 	"""Agrega items a una comanda ya existente (debe estar ABIERTA)."""
 	if order.status != OrderStatusChoices.ABIERTA:
 		raise ValueError('Solo se pueden agregar productos a comandas abiertas.')
@@ -422,6 +566,7 @@ def add_items_to_order(order, items_payload):
 			order=order,
 			product=product,
 			variant=variant,
+			commanded_by=user,
 			quantity=quantity,
 			unit_price=Decimal(unit_price),
 			notes=notes,
@@ -434,11 +579,18 @@ def add_items_to_order(order, items_payload):
 
 
 @transaction.atomic
-def transition_order_item_status(item_id, allowed_statuses, target_status):
+def transition_order_item_status(item_id, allowed_statuses, target_status, user=None):
 	item = OrderItem.objects.select_related('order', 'product').select_for_update().get(pk=item_id)
 	if item.status in allowed_statuses:
 		item.status = target_status
-		item.save(update_fields=['status'])
+		update_fields = ['status']
+		if target_status in [ItemStatusChoices.EN_PREPARACION, ItemStatusChoices.POR_ENTREGAR] and user and not item.prepared_by_id:
+			item.prepared_by = user
+			update_fields.append('prepared_by')
+		if target_status == ItemStatusChoices.ENTREGADO and user:
+			item.delivered_by = user
+			update_fields.append('delivered_by')
+		item.save(update_fields=update_fields)
 	return item
 
 

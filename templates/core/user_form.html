@@ -16,7 +16,7 @@
         <form method="post" class="row g-3" novalidate>
             {% csrf_token %}
             {% for field in form %}
-            {% if field.name != 'can_menu' and field.name != 'can_administrador' and field.name != 'can_comanda' and field.name != 'can_cocina' and field.name != 'can_bar' and field.name != 'can_entregas' and field.name != 'can_caja' %}
+            {% if field.name != 'can_menu' and field.name != 'can_administrador' and field.name != 'can_comanda' and field.name != 'can_cocina' and field.name != 'can_bar' and field.name != 'can_entregas' and field.name != 'can_caja' and field.name != 'can_edit_caja_prices' %}
             <div class="col-12 {% if field.name == 'username' or field.name == 'first_name' or field.name == 'last_name' or field.name == 'email' or field.name == 'new_password' or field.name == 'password1' or field.name == 'password2' or field.name == 'role' %}col-md-6{% endif %}">
                 {% if field.field.widget.input_type == 'checkbox' %}
                 <div class="form-check mt-4">
@@ -40,11 +40,11 @@
                     </div>
                     <div class="user-access-grid">
                         {% for field in form %}
-                        {% if field.name == 'can_menu' or field.name == 'can_administrador' or field.name == 'can_comanda' or field.name == 'can_cocina' or field.name == 'can_bar' or field.name == 'can_entregas' or field.name == 'can_caja' %}
+                        {% if field.name == 'can_menu' or field.name == 'can_administrador' or field.name == 'can_comanda' or field.name == 'can_cocina' or field.name == 'can_bar' or field.name == 'can_entregas' or field.name == 'can_caja' or field.name == 'can_edit_caja_prices' %}
                         <div class="user-access-item">
                             <div class="form-check user-access-check">
                                 {{ field }}
-                                <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label|cut:'Acceso a ' }}</label>
+                                <label class="form-check-label" for="{{ field.id_for_label }}">{% if field.name == 'can_edit_caja_prices' %}{{ field.label }}{% else %}{{ field.label|cut:'Acceso a ' }}{% endif %}</label>
                             </div>
                             {% if field.errors %}<div class="text-danger small mt-2">{{ field.errors|join:', ' }}</div>{% endif %}
                             {% if field.help_text %}<div class="form-text mt-2">{{ field.help_text }}</div>{% endif %}

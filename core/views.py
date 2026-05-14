@@ -3,13 +3,13 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth import logout as auth_logout
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib.auth.views import LoginView
-from django.db.models import DecimalField, F, Sum, Value
+from django.db.models import Count, DecimalField, F, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django.core.files.storage import default_storage
 from django.http import HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
-from django.urls import reverse_lazy
-from django.utils.http import url_has_allowed_host_and_scheme
+from django.urls import reverse, reverse_lazy
+from django.utils.http import url_has_allowed_host_and_scheme, urlencode
 from django.utils import timezone
 from django.views import View
 from django.views.generic import DetailView, FormView, ListView, RedirectView, TemplateView
@@ -30,6 +30,7 @@ from .forms import (
 from .models import (
 	AreaChoices,
 	ItemStatusChoices,
+	Order,
 	OrderItem,
 	OrderPayment,
 	Product,
@@ -41,6 +42,7 @@ from .models import (
 )
 from .services import (
 	BAR_AREAS,
+	DRAFT_RESERVATION_MINUTES,
 	HOME_MODULES,
 	add_items_to_order,
 	build_available_product_catalog,
@@ -62,7 +64,11 @@ from .services import (
 	group_order_items,
 	open_workday,
 	process_order_payment,
+	release_all_draft_items,
+	release_draft_item,
+	reserve_draft_item,
 	transition_order_item_status,
+	update_order_item_unit_price,
 )
 
 User = get_user_model()
@@ -75,6 +81,7 @@ ACCESS_FIELD_MAP = {
 	'bar': 'can_bar',
 	'entregas': 'can_entregas',
 	'caja': 'can_caja',
+	'caja_edit_prices': 'can_edit_caja_prices',
 }
 
 MODULE_ACCESS_BY_URL = {
@@ -126,6 +133,12 @@ def is_ajax_request(request):
 	return request.headers.get('x-requested-with') == 'XMLHttpRequest'
 
 
+def ensure_session_key(request):
+	if not request.session.session_key:
+		request.session.create()
+	return request.session.session_key
+
+
 class AdminAccessMixin(UserPassesTestMixin):
 	def test_func(self):
 		return user_has_access(self.request.user, 'administrador')
@@ -156,6 +169,12 @@ class IndexRedirectView(RedirectView):
 
 class AjaxLoginView(LoginView):
 	template_name = 'login.html'
+
+	def get_context_data(self, **kwargs):
+		context = super().get_context_data(**kwargs)
+		if self.request.GET.get('reason') == 'workday_closed':
+			context['login_notice'] = 'El día laboral fue cerrado. Inicia sesión de nuevo para comenzar el siguiente turno.'
+		return context
 
 	def form_valid(self, form):
 		response = super().form_valid(form)
@@ -366,14 +385,89 @@ class AdminPanelView(LoginRequiredMixin, ModuleAccessMixin, TemplateView):
 			workday, pending_orders, closed = close_workday(request.user)
 			if not closed:
 				messages.info(request, 'No hay un día de trabajo abierto para cerrar.')
-			elif pending_orders:
-				messages.warning(request, f'Día #{workday.pk} cerrado con {pending_orders} comandas pendientes.')
 			else:
-				messages.success(request, f'Día #{workday.pk} cerrado correctamente sin comandas pendientes.')
+				auth_logout(request)
+				login_url = f"{reverse('login')}?{urlencode({'reason': 'workday_closed'})}"
+				return redirect(login_url)
 			return redirect('admin-panel')
 		if is_ajax_request(request):
 			return JsonResponse({'ok': False, 'message': 'No se pudo guardar el formulario.'}, status=400)
 		return self.render_to_response(self.get_context_data(product_form=product_form, supply_form=supply_form, variant_form=variant_form, recipe_form=recipe_form))
+
+
+class AdminWorkdayListView(LoginRequiredMixin, ModuleAccessMixin, ListView):
+	template_name = 'core/admin_workday_list.html'
+	context_object_name = 'workdays'
+	required_access = 'administrador'
+
+	def get_queryset(self):
+		return WorkDay.objects.select_related('opened_by', 'closed_by').annotate(
+			orders_count=Count('orders', distinct=True),
+			total_amount=Coalesce(
+				Sum(
+					F('orders__items__quantity') * F('orders__items__unit_price'),
+					filter=~Q(orders__items__status=ItemStatusChoices.CANCELADO),
+					output_field=DecimalField(max_digits=10, decimal_places=2),
+				),
+				Value(Decimal('0.00')),
+				output_field=DecimalField(max_digits=10, decimal_places=2),
+			),
+		).order_by('-opened_at')
+
+	def get_context_data(self, **kwargs):
+		context = super().get_context_data(**kwargs)
+		context['active_workday'] = get_active_workday()
+		return context
+
+
+class AdminWorkdayDetailView(LoginRequiredMixin, ModuleAccessMixin, DetailView):
+	template_name = 'core/admin_workday_detail.html'
+	context_object_name = 'workday'
+	pk_url_kwarg = 'workday_id'
+	required_access = 'administrador'
+
+	def get_queryset(self):
+		return WorkDay.objects.select_related('opened_by', 'closed_by')
+
+	def get_context_data(self, **kwargs):
+		context = super().get_context_data(**kwargs)
+		orders = self.object.orders.prefetch_related('items').annotate(
+			total_products=Count('items', filter=~Q(items__status=ItemStatusChoices.CANCELADO), distinct=True),
+			total_paid=Coalesce(
+				Sum('payments__total_amount'),
+				Value(Decimal('0.00')),
+				output_field=DecimalField(max_digits=10, decimal_places=2),
+			),
+		).order_by('table_number', '-created_at')
+		context['orders'] = orders
+		context['back_url'] = reverse_lazy('admin-workday-list')
+		return context
+
+
+class AdminWorkdayOrderDetailView(LoginRequiredMixin, ModuleAccessMixin, DetailView):
+	template_name = 'core/cash_detail.html'
+	context_object_name = 'order'
+	pk_url_kwarg = 'order_id'
+	required_access = 'administrador'
+
+	def get_queryset(self):
+		return Order.objects.select_related('workday', 'created_by').prefetch_related('items__product', 'items__price_changes__changed_by')
+
+	def get_context_data(self, **kwargs):
+		context = super().get_context_data(**kwargs)
+		context['grouped_items'] = group_order_items(self.object)
+		context['show_close_action'] = False
+		context['allow_add_items'] = False
+		context['allow_cancel_items'] = False
+		context['is_admin_user'] = False
+		context['can_edit_caja_prices'] = False
+		context['back_url'] = reverse_lazy('admin-workday-detail', kwargs={'workday_id': self.object.workday_id}) if self.object.workday_id else reverse_lazy('admin-workday-list')
+		context['back_label'] = 'Volver a mesas'
+		context['page_kicker'] = 'Administrador'
+		context['page_title'] = f'Consulta de mesa {self.object.table_number}'
+		context['page_copy'] = 'Consulta el detalle histórico de la mesa dentro del día laboral, sin acciones operativas de captura o cancelación.'
+		context['show_user_traceability'] = True
+		return context
 
 
 class ComandaListView(LoginRequiredMixin, ModuleAccessMixin, ListView):
@@ -401,6 +495,7 @@ class ComandaCreateView(LoginRequiredMixin, ModuleAccessMixin, FormView):
 	def get_context_data(self, **kwargs):
 		context = super().get_context_data(**kwargs)
 		context['product_catalog'] = build_available_product_catalog()
+		context['draft_reservation_minutes'] = DRAFT_RESERVATION_MINUTES
 		return context
 
 	def form_valid(self, form):
@@ -415,7 +510,7 @@ class ComandaCreateView(LoginRequiredMixin, ModuleAccessMixin, FormView):
 			messages.error(self.request, 'Agrega al menos un producto a la comanda.')
 			return self.render_to_response(self.get_context_data(form=form))
 		try:
-			order = create_order_from_payload(form, items_payload, self.request.user)
+			order = create_order_from_payload(form, items_payload, self.request.user, session_key=ensure_session_key(self.request))
 		except ValueError as exc:
 			if is_ajax_request(self.request):
 				return JsonResponse({'ok': False, 'message': str(exc)}, status=400)
@@ -437,6 +532,79 @@ class ComandaCreateView(LoginRequiredMixin, ModuleAccessMixin, FormView):
 		if is_ajax_request(self.request):
 			return JsonResponse({'ok': False, 'message': 'Revisa los datos generales de la comanda.'}, status=400)
 		return super().form_invalid(form)
+
+
+class DraftOrderReserveView(LoginRequiredMixin, ModuleAccessMixin, View):
+	http_method_names = ['post']
+	required_access = 'comanda'
+
+	def post(self, request, *args, **kwargs):
+		try:
+			payload = json.loads(request.body.decode('utf-8') or '{}')
+		except (TypeError, ValueError, json.JSONDecodeError):
+			payload = {}
+
+		product_id = payload.get('product_id')
+		variant_id = payload.get('variant_id')
+		quantity = payload.get('quantity')
+
+		if not product_id:
+			return JsonResponse({'ok': False, 'message': 'Selecciona un producto válido.'}, status=400)
+
+		try:
+			reservation = reserve_draft_item(
+				ensure_session_key(request),
+				int(product_id),
+				int(variant_id) if variant_id else None,
+				quantity,
+			)
+		except (TypeError, ValueError) as exc:
+			return JsonResponse({'ok': False, 'message': str(exc)}, status=400)
+
+		return JsonResponse(
+			{
+				'ok': True,
+				'reservation_token': reservation.reservation_token,
+				'quantity': reservation.quantity,
+				'unit_price': str(reservation.unit_price),
+				'expires_in_seconds': DRAFT_RESERVATION_MINUTES * 60,
+			}
+		)
+
+
+class DraftOrderReleaseView(LoginRequiredMixin, ModuleAccessMixin, View):
+	http_method_names = ['post']
+	required_access = 'comanda'
+
+	def post(self, request, *args, **kwargs):
+		try:
+			payload = json.loads(request.body.decode('utf-8') or '{}')
+		except (TypeError, ValueError, json.JSONDecodeError):
+			payload = {}
+
+		reservation_token = (payload.get('reservation_token') or '').strip()
+		if not reservation_token:
+			return JsonResponse({'ok': False, 'message': 'No se encontró la reserva a liberar.'}, status=400)
+
+		released = release_draft_item(ensure_session_key(request), reservation_token)
+		return JsonResponse({'ok': True, 'released': released})
+
+
+class DraftOrderReleaseAllView(LoginRequiredMixin, ModuleAccessMixin, View):
+	http_method_names = ['post']
+	required_access = 'comanda'
+
+	def post(self, request, *args, **kwargs):
+		released_count = release_all_draft_items(ensure_session_key(request))
+		return JsonResponse({'ok': True, 'released_count': released_count})
+
+
+class DraftOrderCatalogView(LoginRequiredMixin, ModuleAccessMixin, View):
+	http_method_names = ['get']
+	required_access = 'comanda'
+
+	def get(self, request, *args, **kwargs):
+		return JsonResponse({'ok': True, 'catalog': build_available_product_catalog()})
 
 
 class ComandaDetailView(LoginRequiredMixin, ModuleAccessMixin, DetailView):
@@ -494,7 +662,7 @@ class OrderItemAddView(LoginRequiredMixin, ModuleAccessMixin, View):
 			items_payload = []
 
 		try:
-			new_items = add_items_to_order(order, items_payload)
+			new_items = add_items_to_order(order, items_payload, user=request.user)
 		except ValueError as exc:
 			if is_ajax_request(request):
 				return JsonResponse({'ok': False, 'message': str(exc)}, status=400)
@@ -569,7 +737,7 @@ class ItemActionBaseView(LoginRequiredMixin, ModuleAccessMixin, View):
 		return 'kitchen-board' if item.area == AreaChoices.COCINA else 'bar-board'
 
 	def post(self, request, item_id, *args, **kwargs):
-		item = transition_order_item_status(item_id, self.allowed_statuses, self.target_status)
+		item = transition_order_item_status(item_id, self.allowed_statuses, self.target_status, user=request.user)
 		if is_ajax_request(request):
 			return JsonResponse(
 				{
@@ -681,6 +849,7 @@ class CashDetailView(LoginRequiredMixin, ModuleAccessMixin, DetailView):
 		context['grouped_items'] = group_order_items(self.object)
 		context['show_close_action'] = True
 		context['is_admin_user'] = is_admin_user(self.request.user)
+		context['can_edit_caja_prices'] = user_has_access(self.request.user, 'caja_edit_prices')
 		context['payment_summary'] = get_order_payment_summary(self.object)
 		context['back_url'] = self.get_back_url()
 		return context
@@ -766,6 +935,73 @@ class OrderPaymentView(LoginRequiredMixin, ModuleAccessMixin, View):
 			)
 		messages.success(request, message)
 		return redirect('cash-detail', order_id=order_id)
+
+
+class OrderItemPriceUpdateView(LoginRequiredMixin, ModuleAccessMixin, View):
+	http_method_names = ['post']
+	required_access = 'caja'
+
+	def test_func(self):
+		return super().test_func() and user_has_access(self.request.user, 'caja_edit_prices')
+
+	def post(self, request, item_id, *args, **kwargs):
+		unit_price = request.POST.get('unit_price', '').strip()
+		try:
+			item, summary, price_change = update_order_item_unit_price(item_id, unit_price, changed_by=request.user, note='')
+		except ValueError as exc:
+			if is_ajax_request(request):
+				return JsonResponse({'ok': False, 'message': str(exc)}, status=400)
+			messages.error(request, str(exc))
+			return redirect('cash-detail', order_id=item.order_id if 'item' in locals() else kwargs.get('order_id'))
+
+		message = f'Precio actualizado para {item.product.name}.'
+		if is_ajax_request(request):
+			return JsonResponse(
+				{
+					'ok': True,
+					'message': message,
+					'item_id': item.id,
+					'unit_price': f'{item.unit_price:.2f}',
+					'item_total': f'{item.total:.2f}',
+					'total_amount': f"{summary['total_amount']:.2f}",
+					'pending_amount': f"{summary['pending_amount']:.2f}",
+					'paid_amount': f"{summary['paid_amount']:.2f}",
+					'can_close_order': summary['can_close'],
+					'price_change_changed_by': price_change.changed_by.get_username() if price_change.changed_by else '',
+					'price_change_changed_at': timezone.localtime(price_change.changed_at).strftime('%d/%m/%Y %H:%M'),
+					'previous_unit_price': f'{price_change.previous_unit_price:.2f}',
+				}
+			)
+		messages.success(request, message)
+		return redirect('cash-detail', order_id=item.order_id)
+
+
+class OrderItemPriceHistoryView(LoginRequiredMixin, ModuleAccessMixin, View):
+	http_method_names = ['get']
+	required_access = 'caja'
+
+	def get(self, request, item_id, *args, **kwargs):
+		item = get_object_or_404(
+			OrderItem.objects.select_related('product', 'order').prefetch_related('price_changes__changed_by'),
+			pk=item_id,
+		)
+		changes = [
+			{
+				'previous_unit_price': f'{change.previous_unit_price:.2f}',
+				'new_unit_price': f'{change.new_unit_price:.2f}',
+				'changed_by': change.changed_by.get_username() if change.changed_by else 'sistema',
+				'changed_at': timezone.localtime(change.changed_at).strftime('%d/%m/%Y %H:%M'),
+			}
+			for change in item.price_changes.all()
+		]
+		return JsonResponse(
+			{
+				'ok': True,
+				'item_id': item.id,
+				'product_name': item.product.name,
+				'changes': changes,
+			}
+		)
 
 
 class OrderPaymentEvidenceView(LoginRequiredMixin, ModuleAccessMixin, View):

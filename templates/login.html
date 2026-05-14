@@ -10,6 +10,11 @@
                 <p class="text-uppercase text-muted small mb-2">Sistema de barra</p>
                 <h1 class="h3 mb-2 login-title">Acceso al bar</h1>
                 <p class="text-muted mb-4">Ingresa para administrar comandas, preparación, barra y cobro del turno.</p>
+                {% if login_notice %}
+                <div class="alert alert-info border-0 small mb-4" role="alert">
+                    {{ login_notice }}
+                </div>
+                {% endif %}
                 <form method="post" data-ajax="true" data-follow-redirect="true">
                     {% csrf_token %}
                     <div class="mb-3">

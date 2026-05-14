@@ -36,15 +36,18 @@
                     <button class="btn btn-dark btn-sm" type="button" id="btnOpenAddItemModal">Agregar producto</button>
                 </div>
                 <p class="text-muted small mb-3">Captura rápida para celular y tableta.</p>
+                <div id="catalogRefreshNotice" class="alert alert-info border-0 small d-none" role="status" aria-live="polite">
+                    Inventario actualizado automáticamente.
+                </div>
                 <div class="table-responsive">
                     <table class="table align-middle">
-                        <thead><tr><th class="text-start">Producto</th><th class="text-start">Comensal</th><th class="text-center">Variante</th><th class="text-center">Insumos</th><th class="text-center">Cantidad</th><th class="text-end">Precio</th><th class="text-end">Subtotal</th><th></th></tr></thead>
+                        <thead><tr><th class="text-start">Producto</th><th class="text-start">Comensal</th><th class="text-center">Variante</th><th class="text-center">Insumos</th><th class="text-center">Cantidad</th><th class="text-center">Reserva</th><th class="text-end">Precio</th><th class="text-end">Subtotal</th><th></th></tr></thead>
                         <tbody id="orderItemsBody">
-                            <tr id="orderItemsEmpty"><td colspan="8" class="text-muted">Aún no agregas productos.</td></tr>
+                            <tr id="orderItemsEmpty"><td colspan="9" class="text-muted">Aún no agregas productos.</td></tr>
                         </tbody>
                         <tfoot>
                             <tr>
-                                <th colspan="6" class="text-end">Total</th>
+                                <th colspan="7" class="text-end">Total</th>
                                 <th id="orderTotalCell">$0.00</th>
                                 <th></th>
                             </tr>
@@ -116,16 +119,23 @@
 </div>
 
 {{ product_catalog|json_script:'product-catalog-data' }}
+{{ draft_reservation_minutes|default:10|json_script:'draft-reservation-minutes-data' }}
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     const catalog = JSON.parse(document.getElementById('product-catalog-data').textContent || '[]');
+    const reservationMinutes = JSON.parse(document.getElementById('draft-reservation-minutes-data').textContent || '10');
     const items = [];
+    let isSubmittingOrder = false;
+    let catalogRefreshInFlight = false;
+    const processedExpiredReservationTokens = new Set();
 
     const itemsBody = document.getElementById('orderItemsBody');
     const emptyRow = document.getElementById('orderItemsEmpty');
     const totalCell = document.getElementById('orderTotalCell');
     const itemsJsonField = document.getElementById('itemsJsonField');
+    const catalogRefreshNotice = document.getElementById('catalogRefreshNotice');
+    let catalogRefreshNoticeTimerId = null;
 
     const modalEl = document.getElementById('modalAddOrderItem');
     const addItemModal = bootstrap.Modal.getOrCreateInstance(modalEl);
@@ -181,6 +191,26 @@ document.addEventListener('DOMContentLoaded', function () {
         return '$' + Number(value || 0).toFixed(2);
     }
 
+    function formatRemainingTime(totalSeconds) {
+        const safeSeconds = Math.max(0, totalSeconds);
+        const minutes = Math.floor(safeSeconds / 60);
+        const seconds = safeSeconds % 60;
+        return String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
+    }
+
+    function getRemainingReservationSeconds(item) {
+        if (!item || !item.reservation_expires_at) {
+            return 0;
+        }
+        return Math.max(0, Math.ceil((item.reservation_expires_at - Date.now()) / 1000));
+    }
+
+    function hasExpiredReservations() {
+        return items.some(function (item) {
+            return Boolean(item.reservation_token) && getRemainingReservationSeconds(item) <= 0;
+        });
+    }
+
     function selectedProduct() {
         return catalog.find(function (p) { return String(p.id) === productSelect.value; }) || null;
     }
@@ -205,7 +235,13 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function renderProductSelect() {
-        catalog.forEach(function (p) {
+        productSelect.innerHTML = '<option value="">Selecciona un producto</option>';
+        catalog.filter(function (product) {
+            if (product.variants && product.variants.length) {
+                return product.variants.some(function (variant) { return Number(variant.stock || 0) > 0; });
+            }
+            return Number(product.stock || 0) > 0;
+        }).forEach(function (p) {
             const opt = document.createElement('option');
             opt.value = p.id;
             opt.textContent = p.name + ' (' + asMoney(p.price) + ')';
@@ -229,9 +265,11 @@ document.addEventListener('DOMContentLoaded', function () {
             variantWrap.classList.remove('d-none');
             const defaultOption = document.createElement('option');
             defaultOption.value = '';
-            defaultOption.textContent = 'Sin variante';
+            defaultOption.textContent = 'Selecciona una variante';
             variantSelect.appendChild(defaultOption);
-            product.variants.forEach(function (variant) {
+            product.variants.filter(function (variant) {
+                return Number(variant.stock || 0) > 0;
+            }).forEach(function (variant) {
                 const opt = document.createElement('option');
                 opt.value = variant.id;
                 opt.textContent = variant.name + ' (+' + asMoney(variant.price_delta) + ')';
@@ -267,14 +305,21 @@ document.addEventListener('DOMContentLoaded', function () {
         items.forEach(function (item, index) {
             const subtotal = Number(item.unit_price) * Number(item.quantity);
             total += subtotal;
+            const remainingSeconds = getRemainingReservationSeconds(item);
+            const reservationBadgeClass = remainingSeconds > 0 ? 'text-bg-info' : 'text-bg-danger';
+            const reservationLabel = remainingSeconds > 0 ? 'Apartado ' + formatRemainingTime(remainingSeconds) : 'Reserva expirada';
             const row = document.createElement('tr');
             row.setAttribute('data-item-index', String(index));
+            if (remainingSeconds <= 0) {
+                row.classList.add('table-warning');
+            }
             row.innerHTML =
                 '<td>' + item.product_name + '</td>' +
                 '<td>' + (item.diner_name || 'Mesa') + '</td>' +
                 '<td>' + (item.variant_name || '-') + '</td>' +
                 '<td>' + (item.supply_names.length ? item.supply_names.join(', ') : '-') + '</td>' +
                 '<td>' + item.quantity + '</td>' +
+                '<td class="text-center"><span class="badge ' + reservationBadgeClass + '" data-reservation-countdown>' + reservationLabel + '</span></td>' +
                 '<td>' + asMoney(item.unit_price) + '</td>' +
                 '<td>' + asMoney(subtotal) + '</td>' +
                 '<td><button type="button" class="btn btn-sm btn-outline-danger btn-remove-item">Quitar</button></td>';
@@ -286,12 +331,131 @@ document.addEventListener('DOMContentLoaded', function () {
             return {
                 product_id: item.product_id,
                 variant_id: item.variant_id,
+                reservation_token: item.reservation_token,
                 supply_names: item.supply_names,
                 quantity: item.quantity,
                 notes: item.notes,
                 diner_name: item.diner_name || '',
             };
         }));
+    }
+
+    function adjustCatalogStock(productId, variantId, quantityDelta) {
+        const product = catalog.find(function (entry) { return entry.id === productId; });
+        if (!product) {
+            return;
+        }
+        if (variantId) {
+            const variant = (product.variants || []).find(function (entry) { return entry.id === variantId; });
+            if (variant) {
+                variant.stock = Math.max(0, Number(variant.stock || 0) + quantityDelta);
+            }
+            product.stock = Math.max(0, Number(product.stock || 0) + quantityDelta);
+            product.variants = (product.variants || []).filter(function (entry) { return Number(entry.stock || 0) > 0; });
+        } else {
+            product.stock = Math.max(0, Number(product.stock || 0) + quantityDelta);
+        }
+        renderProductSelect();
+        renderVariantAndSupplies();
+    }
+
+    function replaceCatalog(nextCatalog) {
+        catalog.splice(0, catalog.length, ...nextCatalog);
+        renderProductSelect();
+        renderVariantAndSupplies();
+    }
+
+    function showCatalogRefreshNotice() {
+        if (!catalogRefreshNotice) {
+            return;
+        }
+        catalogRefreshNotice.classList.remove('d-none');
+        if (catalogRefreshNoticeTimerId) {
+            window.clearTimeout(catalogRefreshNoticeTimerId);
+        }
+        catalogRefreshNoticeTimerId = window.setTimeout(function () {
+            catalogRefreshNotice.classList.add('d-none');
+            catalogRefreshNoticeTimerId = null;
+        }, 4000);
+    }
+
+    async function refreshCatalogFromServer() {
+        if (catalogRefreshInFlight) {
+            return;
+        }
+        catalogRefreshInFlight = true;
+        try {
+            const response = await fetch('{% url 'draft-order-catalog' %}', {
+                method: 'GET',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                credentials: 'same-origin'
+            });
+            const payload = await response.json();
+            if (!response.ok || payload.ok === false || !Array.isArray(payload.catalog)) {
+                return;
+            }
+            replaceCatalog(payload.catalog);
+            showCatalogRefreshNotice();
+        } catch (error) {
+            console.error('No se pudo refrescar el catálogo del borrador.', error);
+        } finally {
+            catalogRefreshInFlight = false;
+        }
+    }
+
+    function updateReservationCountdowns() {
+        let shouldRefreshCatalog = false;
+        const rows = itemsBody.querySelectorAll('tr[data-item-index]');
+        rows.forEach(function (row) {
+            const index = Number(row.getAttribute('data-item-index'));
+            const item = items[index];
+            const badge = row.querySelector('[data-reservation-countdown]');
+            if (!item || !badge) {
+                return;
+            }
+            const remainingSeconds = getRemainingReservationSeconds(item);
+            if (remainingSeconds > 0) {
+                badge.textContent = 'Apartado ' + formatRemainingTime(remainingSeconds);
+                badge.className = 'badge text-bg-info';
+                row.classList.remove('table-warning');
+                return;
+            }
+            badge.textContent = 'Reserva expirada';
+            badge.className = 'badge text-bg-danger';
+            row.classList.add('table-warning');
+            if (item.reservation_token && !processedExpiredReservationTokens.has(item.reservation_token)) {
+                processedExpiredReservationTokens.add(item.reservation_token);
+                shouldRefreshCatalog = true;
+            }
+        });
+        if (shouldRefreshCatalog) {
+            refreshCatalogFromServer();
+        }
+    }
+
+    function hasReservedItems() {
+        return items.some(function (item) { return Boolean(item.reservation_token); });
+    }
+
+    function releaseAllDraftReservations() {
+        if (isSubmittingOrder || !hasReservedItems()) {
+            return;
+        }
+        fetch('{% url 'draft-order-release-all' %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRFToken': window.getCsrfToken ? window.getCsrfToken() : ''
+            },
+            credentials: 'same-origin',
+            keepalive: true,
+            body: '{}'
+        }).catch(function (error) {
+            console.error('No se pudieron liberar las reservas del borrador.', error);
+        });
     }
 
     document.getElementById('btnOpenAddItemModal').addEventListener('click', function () {
@@ -319,7 +483,7 @@ document.addEventListener('DOMContentLoaded', function () {
     productSelect.addEventListener('change', renderVariantAndSupplies);
     variantSelect.addEventListener('change', updateUnitPricePreview);
 
-    addItemForm.addEventListener('submit', function (event) {
+    addItemForm.addEventListener('submit', async function (event) {
         event.preventDefault();
         itemModalErrors.textContent = '';
 
@@ -331,6 +495,10 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         if (!quantity || quantity < 1) {
             itemModalErrors.textContent = 'La cantidad debe ser mayor a 0.';
+            return;
+        }
+        if (product.variants && product.variants.length && !selectedVariant(product)) {
+            itemModalErrors.textContent = 'Selecciona una variante disponible.';
             return;
         }
         if (dinerSelect.value === '__nuevo__' && !dinerNewInput.value.trim()) {
@@ -352,23 +520,52 @@ document.addEventListener('DOMContentLoaded', function () {
         });
         const unitPrice = Number(product.price || 0) + (variant ? Number(variant.price_delta || 0) : 0);
 
-        items.push({
-            product_id: product.id,
-            product_name: product.name,
-            variant_id: variant ? variant.id : null,
-            variant_name: variant ? variant.name : '',
-            supply_names: supplyNames,
-            quantity: quantity,
-            unit_price: unitPrice,
-            notes: notesInput.value || '',
-            diner_name: dinerName,
-        });
+        try {
+            const response = await fetch('{% url 'draft-order-reserve' %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRFToken': window.getCsrfToken ? window.getCsrfToken() : ''
+                },
+                credentials: 'same-origin',
+                body: JSON.stringify({
+                    product_id: product.id,
+                    variant_id: variant ? variant.id : null,
+                    quantity: quantity,
+                })
+            });
+            const payload = await response.json();
+            if (!response.ok || payload.ok === false) {
+                itemModalErrors.textContent = payload.message || 'No fue posible apartar el producto.';
+                return;
+            }
+
+            items.push({
+                product_id: product.id,
+                product_name: product.name,
+                variant_id: variant ? variant.id : null,
+                variant_name: variant ? variant.name : '',
+                reservation_token: payload.reservation_token,
+                reservation_expires_at: Date.now() + (Number(payload.expires_in_seconds || 0) * 1000),
+                supply_names: supplyNames,
+                quantity: payload.quantity,
+                unit_price: Number(payload.unit_price || unitPrice),
+                notes: notesInput.value || '',
+                diner_name: dinerName,
+            });
+            adjustCatalogStock(product.id, variant ? variant.id : null, -payload.quantity);
+        } catch (error) {
+            console.error(error);
+            itemModalErrors.textContent = 'No fue posible apartar el producto. Intenta de nuevo.';
+            return;
+        }
 
         renderItems();
         addItemModal.hide();
     });
 
-    itemsBody.addEventListener('click', function (event) {
+    itemsBody.addEventListener('click', async function (event) {
         const btn = event.target.closest('.btn-remove-item');
         if (!btn) {
             return;
@@ -379,6 +576,27 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         const index = Number(row.getAttribute('data-item-index'));
         if (!Number.isNaN(index)) {
+            const item = items[index];
+            if (item && item.reservation_token) {
+                try {
+                    const response = await fetch('{% url 'draft-order-release' %}', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'X-CSRFToken': window.getCsrfToken ? window.getCsrfToken() : ''
+                        },
+                        credentials: 'same-origin',
+                        body: JSON.stringify({ reservation_token: item.reservation_token })
+                    });
+                    const payload = await response.json();
+                    if (payload.released) {
+                        adjustCatalogStock(item.product_id, item.variant_id, Number(item.quantity || 0));
+                    }
+                } catch (error) {
+                    console.error(error);
+                }
+            }
             items.splice(index, 1);
             renderItems();
         }
@@ -390,10 +608,21 @@ document.addEventListener('DOMContentLoaded', function () {
             alert('Agrega al menos un producto a la comanda.');
             return;
         }
+        if (hasExpiredReservations()) {
+            event.preventDefault();
+            if (window.showAppDialog) {
+                window.showAppDialog('Una o mas reservas del borrador ya expiraron. Quita esos productos y vuelve a agregarlos para confirmar el inventario.', 'warning');
+            } else {
+                alert('Una o mas reservas del borrador ya expiraron.');
+            }
+            return;
+        }
+        isSubmittingOrder = true;
         itemsJsonField.value = JSON.stringify(items.map(function (item) {
             return {
                 product_id: item.product_id,
                 variant_id: item.variant_id,
+                reservation_token: item.reservation_token,
                 supply_names: item.supply_names,
                 quantity: item.quantity,
                 notes: item.notes,
@@ -402,8 +631,16 @@ document.addEventListener('DOMContentLoaded', function () {
         }));
     });
 
+    window.addEventListener('pagehide', releaseAllDraftReservations);
+
+    const reservationHint = document.createElement('div');
+    reservationHint.className = 'text-muted small mt-2';
+    reservationHint.textContent = 'Al agregar un producto al borrador, su inventario se aparta temporalmente por ' + reservationMinutes + ' minutos.';
+    document.querySelector('.card-body.p-4 .text-muted.small.mb-3').insertAdjacentElement('afterend', reservationHint);
+
     renderProductSelect();
     renderItems();
+    window.setInterval(updateReservationCountdowns, 1000);
 });
 </script>
 {% endblock %}

@@ -1,4 +1,5 @@
 from decimal import Decimal
+import uuid
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -6,6 +7,10 @@ from django.db import models
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.utils import timezone
+
+
+def generate_draft_reservation_token():
+	return uuid.uuid4().hex
 
 
 class AreaChoices(models.TextChoices):
@@ -182,6 +187,10 @@ class OrderItem(models.Model):
 	order = models.ForeignKey(Order, related_name='items', on_delete=models.CASCADE)
 	product = models.ForeignKey(Product, on_delete=models.PROTECT)
 	variant = models.ForeignKey(ProductVariant, null=True, blank=True, on_delete=models.SET_NULL)
+	commanded_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='commanded_order_items')
+	prepared_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='prepared_order_items')
+	delivered_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='delivered_order_items')
+	paid_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='paid_order_items')
 	diner_name = models.CharField(max_length=120, blank=True)
 	waiter_name = models.CharField(max_length=120, blank=True)
 	quantity = models.PositiveIntegerField(default=1)
@@ -223,6 +232,58 @@ class OrderItem(models.Model):
 		if self.status == ItemStatusChoices.CANCELADO and not self.is_paid:
 			return 'No aplica'
 		return self.get_paid_status_display()
+
+	@property
+	def latest_price_change(self):
+		prefetched = getattr(self, '_prefetched_objects_cache', {}).get('price_changes')
+		if prefetched is not None:
+			return prefetched[0] if prefetched else None
+		return self.price_changes.select_related('changed_by').first()
+
+	@property
+	def traceability_summary(self):
+		parts = []
+		if self.commanded_by:
+			parts.append(f'Comandó: {self.commanded_by.get_username()}')
+		if self.prepared_by:
+			parts.append(f'Elaboró: {self.prepared_by.get_username()}')
+		if self.delivered_by:
+			parts.append(f'Entregó: {self.delivered_by.get_username()}')
+		if self.paid_by:
+			parts.append(f'Cobró: {self.paid_by.get_username()}')
+		return ' | '.join(parts)
+
+
+class OrderItemPriceChange(models.Model):
+	order_item = models.ForeignKey(OrderItem, on_delete=models.CASCADE, related_name='price_changes')
+	previous_unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+	new_unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+	note = models.CharField(max_length=255, blank=True)
+	changed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
+	changed_at = models.DateTimeField(default=timezone.now)
+
+	class Meta:
+		ordering = ['-changed_at', '-id']
+
+	def __str__(self):
+		return f'Cambio de precio item {self.order_item_id}: {self.previous_unit_price} -> {self.new_unit_price}'
+
+
+class DraftOrderReservation(models.Model):
+	session_key = models.CharField(max_length=40, db_index=True)
+	reservation_token = models.CharField(max_length=32, unique=True, default=generate_draft_reservation_token, editable=False)
+	product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name='draft_reservations')
+	variant = models.ForeignKey(ProductVariant, null=True, blank=True, on_delete=models.PROTECT, related_name='draft_reservations')
+	quantity = models.PositiveIntegerField(default=1)
+	unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+	created_at = models.DateTimeField(default=timezone.now)
+	expires_at = models.DateTimeField(db_index=True)
+
+	class Meta:
+		ordering = ['created_at', 'id']
+
+	def __str__(self):
+		return f'Reserva borrador {self.reservation_token} ({self.product.name})'
 
 
 class OrderPayment(models.Model):
@@ -274,6 +335,7 @@ class UserAccess(models.Model):
 	can_bar = models.BooleanField(default=False)
 	can_entregas = models.BooleanField(default=False)
 	can_caja = models.BooleanField(default=False)
+	can_edit_caja_prices = models.BooleanField(default=False)
 
 	class Meta:
 		verbose_name = 'Acceso de usuario'

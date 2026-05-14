@@ -157,6 +157,7 @@ class UserAccessMixin:
         'can_bar': 'Acceso a Bar',
         'can_entregas': 'Acceso a Entregas',
         'can_caja': 'Acceso a Caja',
+        'can_edit_caja_prices': 'Permitir cambiar precios en Caja',
     }
     access_field_names = [
         'can_menu',
@@ -166,6 +167,7 @@ class UserAccessMixin:
         'can_bar',
         'can_entregas',
         'can_caja',
+        'can_edit_caja_prices',
     ]
 
     def ensure_access_fields(self):

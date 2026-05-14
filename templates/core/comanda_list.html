@@ -2,6 +2,10 @@
 
 {% block title %}Comandas | Bar{% endblock %}
 
+{% block extra_head %}
+<meta name="bar-auto-refresh" content="10">
+{% endblock %}
+
 {% block content %}
 <section class="bar-page-header rounded-4 p-4 p-lg-5 mb-4 overflow-hidden">
 <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 page-header-layout">
@@ -56,31 +60,41 @@
 {% block extra_js %}
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    const closeOrderButtons = document.querySelectorAll('.btn-close-order');
-    closeOrderButtons.forEach(button => {
-        button.addEventListener('click', function (e) {
-            e.preventDefault();
-            const orderId = this.dataset.orderId;
-            if (confirm('¿Está seguro que desea cerrar esta mesa?')) {
-                fetch(`/caja/comanda/${orderId}/cobrar/`, {
-                    method: 'POST',
-                    headers: {
-                        'X-Requested-With': 'XMLHttpRequest',
-                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || ''
-                    }
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.ok) {
-                        location.reload();
-                    } else {
-                        alert('Error: ' + (data.message || 'No se pudo cerrar la mesa'));
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    alert('Error al cerrar la mesa');
-                });
+    document.addEventListener('click', function (event) {
+        const button = event.target.closest('.btn-close-order');
+        if (!button) {
+            return;
+        }
+        event.preventDefault();
+        const orderId = button.dataset.orderId;
+        if (!orderId || !confirm('¿Está seguro que desea cerrar esta mesa?')) {
+            return;
+        }
+
+        fetch(`/caja/comanda/${orderId}/cobrar/`, {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRFToken': window.getCsrfToken ? window.getCsrfToken() : ''
+            },
+            credentials: 'same-origin'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.ok) {
+                window.location.reload();
+            } else if (window.showAppDialog) {
+                window.showAppDialog(data.message || 'No se pudo cerrar la mesa', 'danger');
+            } else {
+                alert('Error: ' + (data.message || 'No se pudo cerrar la mesa'));
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            if (window.showAppDialog) {
+                window.showAppDialog('Error al cerrar la mesa', 'danger');
+            } else {
+                alert('Error al cerrar la mesa');
             }
         });
     });

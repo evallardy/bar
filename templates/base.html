@@ -5,6 +5,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Bar{% endblock %}</title>
+    {% block extra_head %}{% endblock %}
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -50,7 +51,7 @@
             </div>
         </div>
     </nav>
-    <main class="container py-4 restaurant-main">
+    <main id="appMainContent" class="container py-4 restaurant-main">
         {% block content %}{% endblock %}
     </main>
     {% if messages %}
@@ -108,6 +109,113 @@
                 { pattern: /cambiar contraseña/i, icon: 'key' },
                 { pattern: /salir/i, icon: 'box-arrow-right' }
             ];
+            const autoRefreshMeta = document.querySelector('meta[name="bar-auto-refresh"]');
+            const autoRefreshIntervalSeconds = autoRefreshMeta ? parseInt(autoRefreshMeta.getAttribute('content') || '0', 10) : 0;
+            let autoRefreshTimerId = null;
+            let pendingAjaxSubmissions = 0;
+            let autoRefreshRequestInFlight = false;
+
+            function hasVisibleModal() {
+                return Boolean(document.querySelector('.modal.show'));
+            }
+
+            function getCsrfToken() {
+                const cookie = document.cookie
+                    .split(';')
+                    .map(function (item) { return item.trim(); })
+                    .find(function (item) { return item.indexOf('csrftoken=') === 0; });
+                if (!cookie) {
+                    return '';
+                }
+                return decodeURIComponent(cookie.split('=').slice(1).join('='));
+            }
+
+            function processServerMessages(source) {
+                if (!source) {
+                    return;
+                }
+                const entries = Array.from(source.querySelectorAll('[data-level]')).map(function (node) {
+                    return {
+                        level: normalizeMessageLevel(node.dataset.level),
+                        message: (node.textContent || '').trim()
+                    };
+                }).filter(function (entry) {
+                    return entry.message;
+                });
+                if (!entries.length) {
+                    return;
+                }
+                const priority = { danger: 3, warning: 2, success: 1, info: 0 };
+                const level = entries.reduce(function (current, entry) {
+                    return priority[entry.level] > priority[current] ? entry.level : current;
+                }, 'info');
+                const message = entries.map(function (entry) { return entry.message; }).join('\n');
+                showMessage(message, level);
+            }
+
+            async function refreshMainContent() {
+                if (!autoRefreshIntervalSeconds || autoRefreshRequestInFlight) {
+                    return;
+                }
+                autoRefreshRequestInFlight = true;
+                try {
+                    const response = await fetch(window.location.href, {
+                        method: 'GET',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        credentials: 'same-origin'
+                    });
+                    if (response.redirected) {
+                        window.location.href = response.url;
+                        return;
+                    }
+                    const html = await response.text();
+                    const parser = new DOMParser();
+                    const nextDocument = parser.parseFromString(html, 'text/html');
+                    const nextMain = nextDocument.getElementById('appMainContent');
+                    const currentMain = document.getElementById('appMainContent');
+                    if (!nextMain || !currentMain) {
+                        window.location.reload();
+                        return;
+                    }
+                    currentMain.innerHTML = nextMain.innerHTML;
+                    document.title = nextDocument.title || document.title;
+
+                    const nextMessages = nextDocument.getElementById('server-message-source');
+                    const currentMessages = document.getElementById('server-message-source');
+                    if (currentMessages) {
+                        currentMessages.remove();
+                    }
+                    if (nextMessages) {
+                        document.body.appendChild(nextMessages);
+                        processServerMessages(nextMessages);
+                    }
+
+                    document.dispatchEvent(new CustomEvent('bar:content-refreshed'));
+                } catch (error) {
+                    console.error('No se pudo actualizar el contenido automaticamente.', error);
+                } finally {
+                    autoRefreshRequestInFlight = false;
+                    scheduleAutoRefresh(autoRefreshIntervalSeconds * 1000);
+                }
+            }
+
+            function scheduleAutoRefresh(delayMs) {
+                if (!autoRefreshIntervalSeconds) {
+                    return;
+                }
+                if (autoRefreshTimerId) {
+                    window.clearTimeout(autoRefreshTimerId);
+                }
+                autoRefreshTimerId = window.setTimeout(function () {
+                    if (pendingAjaxSubmissions > 0 || hasVisibleModal() || autoRefreshRequestInFlight) {
+                        scheduleAutoRefresh(1000);
+                        return;
+                    }
+                    refreshMainContent();
+                }, delayMs);
+            }
 
             function normalizeActionText(text) {
                 return (text || '').replace(/\s+/g, ' ').trim();
@@ -278,6 +386,7 @@
             }
 
             window.showAppDialog = showMessage;
+            window.getCsrfToken = getCsrfToken;
 
             function statusBadgeClass(status) {
                 if (status === 'ENTREGADO') return 'text-bg-success';
@@ -329,38 +438,44 @@
             }
 
             async function submitAjaxForm(form) {
+                pendingAjaxSubmissions += 1;
                 const formData = new FormData(form);
-                const response = await fetch(form.action, {
-                    method: form.method || 'POST',
-                    body: formData,
-                    headers: {
-                        'X-Requested-With': 'XMLHttpRequest'
-                    },
-                    credentials: 'same-origin'
-                });
-
-                let payload = null;
                 try {
-                    payload = await response.json();
-                } catch (e) {
-                    payload = null;
-                }
+                    const response = await fetch(form.action, {
+                        method: form.method || 'POST',
+                        body: formData,
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        credentials: 'same-origin'
+                    });
 
-                if (!response.ok || (payload && payload.ok === false)) {
-                    const errorMessage = payload && payload.message ? payload.message : 'No se pudo procesar la accion.';
-                    showMessage(errorMessage, 'danger');
-                    return;
-                }
+                    let payload = null;
+                    try {
+                        payload = await response.json();
+                    } catch (e) {
+                        payload = null;
+                    }
 
-                if (payload && payload.message) {
-                    showMessage(payload.message, 'success');
-                }
+                    if (!response.ok || (payload && payload.ok === false)) {
+                        const errorMessage = payload && payload.message ? payload.message : 'No se pudo procesar la accion.';
+                        showMessage(errorMessage, 'danger');
+                        return;
+                    }
 
-                updateItemCard(form, payload);
-                form.dispatchEvent(new CustomEvent('ajax:success', { detail: payload }));
+                    if (payload && payload.message) {
+                        showMessage(payload.message, 'success');
+                    }
 
-                if (form.dataset.followRedirect === 'true' && payload && payload.redirect_url) {
-                    window.location.href = payload.redirect_url;
+                    updateItemCard(form, payload);
+                    form.dispatchEvent(new CustomEvent('ajax:success', { detail: payload }));
+
+                    if (form.dataset.followRedirect === 'true' && payload && payload.redirect_url) {
+                        window.location.href = payload.redirect_url;
+                    }
+                } finally {
+                    pendingAjaxSubmissions = Math.max(0, pendingAjaxSubmissions - 1);
+                    scheduleAutoRefresh(autoRefreshIntervalSeconds * 1000);
                 }
             }
 
@@ -376,25 +491,21 @@
             document.addEventListener('DOMContentLoaded', function () {
                 enhanceButtons(document);
                 enhanceNavigation(document);
-                const source = document.getElementById('server-message-source');
-                if (source) {
-                    const entries = Array.from(source.querySelectorAll('[data-level]')).map(function (node) {
-                        return {
-                            level: normalizeMessageLevel(node.dataset.level),
-                            message: (node.textContent || '').trim()
-                        };
-                    }).filter(function (entry) {
-                        return entry.message;
-                    });
-                    if (entries.length) {
-                        const priority = { danger: 3, warning: 2, success: 1, info: 0 };
-                        const level = entries.reduce(function (current, entry) {
-                            return priority[entry.level] > priority[current] ? entry.level : current;
-                        }, 'info');
-                        const message = entries.map(function (entry) { return entry.message; }).join('\n');
-                        showMessage(message, level);
-                    }
+                if (autoRefreshIntervalSeconds) {
+                    scheduleAutoRefresh(autoRefreshIntervalSeconds * 1000);
                 }
+                processServerMessages(document.getElementById('server-message-source'));
+            });
+
+            document.addEventListener('shown.bs.modal', function () {
+                if (autoRefreshTimerId) {
+                    window.clearTimeout(autoRefreshTimerId);
+                    autoRefreshTimerId = null;
+                }
+            });
+
+            document.addEventListener('hidden.bs.modal', function () {
+                scheduleAutoRefresh(autoRefreshIntervalSeconds * 1000);
             });
 
             const observer = new MutationObserver(function (mutations) {

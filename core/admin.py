@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Order, OrderItem, Product, ProductSupply, ProductVariant, Supply, UserAccess, WorkDay
+from .models import Order, OrderItem, OrderItemPriceChange, Product, ProductSupply, ProductVariant, Supply, UserAccess, WorkDay
 
 
 class OrderItemInline(admin.TabularInline):
@@ -53,6 +53,13 @@ class OrderAdmin(admin.ModelAdmin):
 	inlines = [OrderItemInline]
 
 
+@admin.register(OrderItemPriceChange)
+class OrderItemPriceChangeAdmin(admin.ModelAdmin):
+	list_display = ('order_item', 'previous_unit_price', 'new_unit_price', 'changed_by', 'changed_at')
+	list_filter = ('changed_at', 'changed_by')
+	search_fields = ('order_item__order__id', 'order_item__product__name', 'note', 'changed_by__username')
+
+
 @admin.register(UserAccess)
 class UserAccessAdmin(admin.ModelAdmin):
 	list_display = (
@@ -65,8 +72,9 @@ class UserAccessAdmin(admin.ModelAdmin):
 		'can_bar',
 		'can_entregas',
 		'can_caja',
+		'can_edit_caja_prices',
 	)
-	list_filter = ('role', 'can_administrador', 'can_comanda', 'can_cocina', 'can_bar', 'can_entregas', 'can_caja')
+	list_filter = ('role', 'can_administrador', 'can_comanda', 'can_cocina', 'can_bar', 'can_entregas', 'can_caja', 'can_edit_caja_prices')
 	search_fields = ('user__username', 'user__first_name', 'user__last_name')
 
 

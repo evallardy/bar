@@ -11,9 +11,9 @@
             <h1 class="page-title mb-2">Cobro de mesa {{ order.table_number }}</h1>
             <p class="page-copy mb-0">Revisa el saldo pendiente, registra pagos parciales y confirma el cierre de la mesa sin perder visibilidad del consumo.</p>
             {% else %}
-            <p class="text-uppercase small mb-1 page-kicker">Comanda</p>
-            <h1 class="page-title mb-2">Detalle de mesa {{ order.table_number }}</h1>
-            <p class="page-copy mb-0">Consulta productos, comensales y estatus de preparación desde una vista clara para servicio y seguimiento.</p>
+            <p class="text-uppercase small mb-1 page-kicker">{{ page_kicker|default:'Comanda' }}</p>
+            <h1 class="page-title mb-2">{% if page_title %}{{ page_title }}{% else %}Detalle de mesa {{ order.table_number }}{% endif %}</h1>
+            <p class="page-copy mb-0">{{ page_copy|default:'Consulta productos, comensales y estatus de preparación desde una vista clara para servicio y seguimiento.' }}</p>
             {% endif %}
         </div>
         <div class="text-end page-aside">
@@ -33,14 +33,14 @@
 </section>
 
 <div class="d-flex justify-content-start mb-4">
-    <a class="btn btn-outline-secondary" href="{{ back_url }}">Cancelar</a>
+    <a class="btn btn-outline-secondary" href="{{ back_url }}">{{ back_label|default:'Cancelar' }}</a>
 </div>
 
 <div class="card border-0 shadow-sm rounded-4 mb-4 restaurant-card table-shell">
     <div class="card-body p-4">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <h2 class="h5 mb-0">Mesa {{ order.table_number }}</h2>
-            {% if order.status == 'ABIERTA' and not show_close_action %}
+            {% if order.status == 'ABIERTA' and not show_close_action and allow_add_items != False %}
             <button class="btn btn-dark btn-sm" type="button" id="btnOpenAddItemModal">Agregar producto</button>
             {% endif %}
         </div>
@@ -57,6 +57,7 @@
                         <th class="text-end">Precio unit.</th>
                         <th class="text-end">Subtotal</th>
                         <th class="text-center">Estatus</th>
+                        {% if show_close_action and order.status == 'ABIERTA' and can_edit_caja_prices %}<th></th>{% endif %}
                         {% if is_admin_user %}<th></th>{% endif %}
                     </tr>
                 </thead>
@@ -74,11 +75,30 @@
                         <td class="text-start">
                             <div class="fw-semibold">{{ item.product.name }}</div>
                             {% if item.notes %}<div class="text-muted small">{{ item.notes|cut:'Variante: '|cut:'Insumos: ' }}</div>{% endif %}
+                            {% if show_user_traceability %}
+                            <div class="mt-1">
+                                <button
+                                    type="button"
+                                    class="btn btn-link btn-sm p-0 js-view-user-traceability"
+                                    data-item-name="{{ item.product.name }}"
+                                    data-commanded-by="{{ item.commanded_by.username|default:'' }}"
+                                    data-prepared-by="{{ item.prepared_by.username|default:'' }}"
+                                    data-delivered-by="{{ item.delivered_by.username|default:'' }}"
+                                    data-paid-by="{{ item.paid_by.username|default:'' }}">
+                                    Ver usuarios
+                                </button>
+                            </div>
+                            {% endif %}
+                            <div class="mt-1 {% if not item.latest_price_change %}d-none{% endif %}" data-item-price-history-wrap>
+                                <button type="button" class="btn btn-link btn-sm p-0 js-view-price-history" data-item-id="{{ item.id }}" data-item-name="{{ item.product.name }}">
+                                    Ver cambios de precio
+                                </button>
+                            </div>
                         </td>
                         <td class="text-start text-muted small">{{ item.diner_name|default:'Mesa' }}</td>
                         <td class="text-center">{{ item.quantity }}</td>
-                        <td class="text-end">${{ item.unit_price }}</td>
-                        <td class="text-end fw-semibold">${{ item.total }}</td>
+                        <td class="text-end" data-item-unit-price>${{ item.unit_price }}</td>
+                        <td class="text-end fw-semibold" data-item-subtotal>${{ item.total }}</td>
                         <td class="text-center">
                             <div class="d-flex flex-column align-items-center gap-1">
                                 <span class="badge {% if item.status == 'ENTREGADO' %}text-bg-info{% elif item.status == 'CANCELADO' %}text-bg-secondary{% elif item.status == 'POR_ENTREGAR' %}text-bg-warning{% elif item.status == 'EN_PREPARACION' %}text-bg-primary{% else %}text-bg-dark{% endif %}" data-item-status>
@@ -89,7 +109,14 @@
                                 </span>
                             </div>
                         </td>
-                        {% if is_admin_user %}
+                        {% if show_close_action and order.status == 'ABIERTA' and can_edit_caja_prices %}
+                        <td>
+                            {% if item.status != 'CANCELADO' and not item.is_paid %}
+                            <button type="button" class="btn btn-sm btn-outline-dark js-edit-price" data-item-id="{{ item.id }}" data-item-name="{{ item.product.name }}" data-current-price="{{ item.unit_price }}">Cambiar precio</button>
+                            {% endif %}
+                        </td>
+                        {% endif %}
+                        {% if is_admin_user and allow_cancel_items != False %}
                         <td>
                             {% if item.status != 'ENTREGADO' and item.status != 'CANCELADO' and not item.is_paid %}
                             <form method="post" action="{% url 'item-cancel' item.id %}" data-ajax="true" data-role="cancel-item-form">
@@ -114,6 +141,79 @@
     </div>
 </div>
 
+{% if show_user_traceability %}
+<div class="modal fade" id="modalUserTraceability" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Usuarios que intervinieron</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <div class="fw-semibold mb-3" id="userTraceabilityItemName">-</div>
+                <div class="list-group list-group-flush">
+                    <div class="list-group-item d-flex justify-content-between align-items-center px-0">
+                        <span class="text-muted">Comandó</span>
+                        <strong id="userTraceabilityCommandedBy">Sin registro</strong>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between align-items-center px-0">
+                        <span class="text-muted">Elaboró</span>
+                        <strong id="userTraceabilityPreparedBy">Sin registro</strong>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between align-items-center px-0">
+                        <span class="text-muted">Entregó</span>
+                        <strong id="userTraceabilityDeliveredBy">Sin registro</strong>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between align-items-center px-0">
+                        <span class="text-muted">Cobró</span>
+                        <strong id="userTraceabilityPaidBy">Sin registro</strong>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var traceabilityModalEl = document.getElementById('modalUserTraceability');
+    if (!traceabilityModalEl) {
+        return;
+    }
+    if (traceabilityModalEl.parentElement !== document.body) {
+        document.body.appendChild(traceabilityModalEl);
+    }
+
+    var traceabilityModal = bootstrap.Modal.getOrCreateInstance(traceabilityModalEl);
+    var itemNameEl = document.getElementById('userTraceabilityItemName');
+    var commandedByEl = document.getElementById('userTraceabilityCommandedBy');
+    var preparedByEl = document.getElementById('userTraceabilityPreparedBy');
+    var deliveredByEl = document.getElementById('userTraceabilityDeliveredBy');
+    var paidByEl = document.getElementById('userTraceabilityPaidBy');
+
+    function asUserLabel(value) {
+        return value && value.trim() ? value : 'Sin registro';
+    }
+
+    document.addEventListener('click', function (event) {
+        var button = event.target.closest('.js-view-user-traceability');
+        if (!button) {
+            return;
+        }
+        itemNameEl.textContent = button.dataset.itemName || '-';
+        commandedByEl.textContent = asUserLabel(button.dataset.commandedBy || '');
+        preparedByEl.textContent = asUserLabel(button.dataset.preparedBy || '');
+        deliveredByEl.textContent = asUserLabel(button.dataset.deliveredBy || '');
+        paidByEl.textContent = asUserLabel(button.dataset.paidBy || '');
+        traceabilityModal.show();
+    });
+});
+</script>
+{% endif %}
+
 {% if show_close_action and order.status == 'ABIERTA' %}
 <div class="d-flex flex-wrap justify-content-end gap-2 mb-3">
     <button class="btn btn-outline-dark" type="button" id="btnOpenPaymentModal">Cobrar seleccion</button>
@@ -121,6 +221,54 @@
         {% csrf_token %}
         <button class="btn btn-dark">Cerrar comanda</button>
     </form>
+</div>
+
+<div class="modal fade" id="modalEditPrice" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Cambiar precio del producto</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <form id="editPriceForm" novalidate>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <div class="text-muted small">Producto</div>
+                        <div class="fw-semibold" id="editPriceItemName">-</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="editPriceInput">Nuevo precio unitario</label>
+                        <input class="form-control" type="number" min="0" step="0.01" id="editPriceInput" required>
+                    </div>
+                    <div class="text-danger small" id="editPriceErrors"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-dark">Guardar precio</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalPriceHistory" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Historial de cambios de precio</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <div class="fw-semibold mb-3" id="priceHistoryItemName">-</div>
+                <div class="text-danger small mb-3" id="priceHistoryErrors"></div>
+                <div id="priceHistoryEmpty" class="text-muted small d-none">Este producto todavía no tiene cambios de precio registrados.</div>
+                <div class="list-group" id="priceHistoryList"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <div class="modal fade" id="modalPayment" tabindex="-1" aria-hidden="true">
@@ -203,7 +351,7 @@
 </div>
 {% endif %}
 
-{% if order.status == 'ABIERTA' and not show_close_action %}
+{% if order.status == 'ABIERTA' and not show_close_action and allow_add_items != False %}
 <!-- Modal agregar producto -->
 <div class="modal fade" id="modalAddOrderItem" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
@@ -524,10 +672,20 @@ document.addEventListener('DOMContentLoaded', function () {
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     var paymentUrl = '{% url "order-pay-items" order.id %}';
+    var updatePriceUrlTemplate = '{% url "order-item-price-update" 0 %}';
+    var priceHistoryUrlTemplate = '{% url "order-item-price-history" 0 %}';
     var paymentEvidenceUrlTemplate = '{% url "order-payment-evidence" 0 %}';
     var csrfToken = '{{ csrf_token }}';
+    var priceModalEl = document.getElementById('modalEditPrice');
+    var priceHistoryModalEl = document.getElementById('modalPriceHistory');
     var paymentModalEl = document.getElementById('modalPayment');
     var paymentEvidenceModalEl = document.getElementById('modalPaymentEvidence');
+    if (priceModalEl && priceModalEl.parentElement !== document.body) {
+        document.body.appendChild(priceModalEl);
+    }
+    if (priceHistoryModalEl && priceHistoryModalEl.parentElement !== document.body) {
+        document.body.appendChild(priceHistoryModalEl);
+    }
     if (paymentModalEl && paymentModalEl.parentElement !== document.body) {
         document.body.appendChild(paymentModalEl);
     }
@@ -537,6 +695,8 @@ document.addEventListener('DOMContentLoaded', function () {
     var selectedTotalEl = document.getElementById('paymentSelectedTotal');
     var enteredTotalEl = document.getElementById('paymentEnteredTotal');
     var diffEl = document.getElementById('paymentDifference');
+    var totalCell = document.getElementById('orderTotalCell');
+    var totalDisplay = document.getElementById('orderTotalDisplay');
     var pendingDisplay = document.getElementById('orderPendingDisplay');
     var paidDisplay = document.getElementById('orderPaidDisplay');
     var paymentErrors = document.getElementById('paymentErrors');
@@ -544,6 +704,16 @@ document.addEventListener('DOMContentLoaded', function () {
     var paymentCard = document.getElementById('paymentCard');
     var paymentTransfer = document.getElementById('paymentTransfer');
     var closeOrderForm = document.getElementById('closeOrderForm');
+    var editPriceForm = document.getElementById('editPriceForm');
+    var editPriceInput = document.getElementById('editPriceInput');
+    var editPriceItemName = document.getElementById('editPriceItemName');
+    var editPriceErrors = document.getElementById('editPriceErrors');
+    var priceModal = bootstrap.Modal.getOrCreateInstance(priceModalEl);
+    var priceHistoryModal = bootstrap.Modal.getOrCreateInstance(priceHistoryModalEl);
+    var priceHistoryItemName = document.getElementById('priceHistoryItemName');
+    var priceHistoryErrors = document.getElementById('priceHistoryErrors');
+    var priceHistoryEmpty = document.getElementById('priceHistoryEmpty');
+    var priceHistoryList = document.getElementById('priceHistoryList');
     var paymentForm = document.getElementById('paymentForm');
     var paymentModal = bootstrap.Modal.getOrCreateInstance(paymentModalEl);
     var paymentEvidenceModal = bootstrap.Modal.getOrCreateInstance(paymentEvidenceModalEl);
@@ -562,6 +732,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var payAllItems = document.getElementById('payAllItems');
     var latestPaymentContext = null;
     var pendingEvidenceOpen = false;
+    var currentPriceItemId = null;
 
     function hideBootstrapModal(modalEl, modalInstance) {
         if (!modalEl || !modalInstance) {
@@ -615,6 +786,14 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function buildEvidenceUrl(paymentId) {
         return paymentEvidenceUrlTemplate.replace('/0/', '/' + paymentId + '/');
+    }
+
+    function buildPriceUpdateUrl(itemId) {
+        return updatePriceUrlTemplate.replace('/0/', '/' + itemId + '/');
+    }
+
+    function buildPriceHistoryUrl(itemId) {
+        return priceHistoryUrlTemplate.replace('/0/', '/' + itemId + '/');
     }
 
     function resetEvidenceModal() {
@@ -686,6 +865,147 @@ document.addEventListener('DOMContentLoaded', function () {
     function asMoney(value) {
         return '$' + Number(value || 0).toFixed(2);
     }
+
+    document.addEventListener('click', function (event) {
+        var button = event.target.closest('.js-edit-price');
+        if (!button) {
+            return;
+        }
+        currentPriceItemId = button.dataset.itemId;
+        editPriceItemName.textContent = button.dataset.itemName || '-';
+        editPriceInput.value = Number(button.dataset.currentPrice || 0).toFixed(2);
+        editPriceErrors.textContent = '';
+        priceModal.show();
+    });
+
+    document.addEventListener('click', function (event) {
+        var button = event.target.closest('.js-view-price-history');
+        if (!button) {
+            return;
+        }
+        var itemId = button.dataset.itemId;
+        priceHistoryItemName.textContent = button.dataset.itemName || '-';
+        priceHistoryErrors.textContent = '';
+        priceHistoryEmpty.classList.add('d-none');
+        priceHistoryList.innerHTML = '';
+
+        fetch(buildPriceHistoryUrl(itemId), {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        })
+        .then(function (response) {
+            return response.json().then(function (data) {
+                return { ok: response.ok, data: data };
+            });
+        })
+        .then(function (result) {
+            if (!result.ok || !result.data.ok) {
+                priceHistoryErrors.textContent = result.data.message || 'No se pudo cargar el historial.';
+                priceHistoryModal.show();
+                return;
+            }
+
+            if (!result.data.changes || !result.data.changes.length) {
+                priceHistoryEmpty.classList.remove('d-none');
+                priceHistoryModal.show();
+                return;
+            }
+
+            result.data.changes.forEach(function (change) {
+                var row = document.createElement('div');
+                row.className = 'list-group-item';
+                row.innerHTML = '<div class="fw-semibold">$' + change.previous_unit_price + ' -> $' + change.new_unit_price + '</div>' +
+                    '<div class="text-muted small">' + change.changed_by + ' | ' + change.changed_at + '</div>';
+                priceHistoryList.appendChild(row);
+            });
+            priceHistoryModal.show();
+        })
+        .catch(function () {
+            priceHistoryErrors.textContent = 'Error de conexión. Intenta de nuevo.';
+            priceHistoryModal.show();
+        });
+    });
+
+    editPriceForm.addEventListener('submit', function (event) {
+        event.preventDefault();
+        editPriceErrors.textContent = '';
+        if (!currentPriceItemId) {
+            editPriceErrors.textContent = 'No se encontró el producto a actualizar.';
+            return;
+        }
+
+        var formData = new FormData();
+        formData.append('csrfmiddlewaretoken', csrfToken);
+        formData.append('unit_price', editPriceInput.value || '0');
+
+        fetch(buildPriceUpdateUrl(currentPriceItemId), {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: formData,
+        })
+        .then(function (response) {
+            return response.json().then(function (data) {
+                return { ok: response.ok, data: data };
+            });
+        })
+        .then(function (result) {
+            if (!result.ok || !result.data.ok) {
+                editPriceErrors.textContent = result.data.message || 'No se pudo actualizar el precio.';
+                return;
+            }
+            var row = document.querySelector('tr[data-item-id="' + result.data.item_id + '"]');
+            if (row) {
+                row.dataset.itemTotal = result.data.item_total;
+                var priceCell = row.querySelector('[data-item-unit-price]');
+                if (priceCell) {
+                    priceCell.textContent = '$' + result.data.unit_price;
+                }
+                var subtotalCell = row.querySelector('[data-item-subtotal]');
+                if (subtotalCell) {
+                    subtotalCell.textContent = '$' + result.data.item_total;
+                }
+                var priceHistoryWrap = row.querySelector('[data-item-price-history-wrap]');
+                if (priceHistoryWrap) {
+                    priceHistoryWrap.classList.remove('d-none');
+                } else {
+                    var productCell = row.querySelector('td.text-start');
+                    if (productCell) {
+                        var actionWrap = document.createElement('div');
+                        actionWrap.className = 'mt-1';
+                        actionWrap.setAttribute('data-item-price-history-wrap', '');
+                        actionWrap.innerHTML = '<button type="button" class="btn btn-link btn-sm p-0 js-view-price-history" data-item-id="' + result.data.item_id + '" data-item-name="' + editPriceItemName.textContent + '">Ver cambios de precio</button>';
+                        productCell.appendChild(actionWrap);
+                    }
+                }
+                var editButton = row.querySelector('.js-edit-price');
+                if (editButton) {
+                    editButton.dataset.currentPrice = result.data.unit_price;
+                }
+            }
+            if (totalCell) {
+                totalCell.textContent = '$' + result.data.total_amount;
+            }
+            if (totalDisplay) {
+                totalDisplay.textContent = '$' + result.data.total_amount;
+            }
+            if (pendingDisplay) {
+                pendingDisplay.textContent = '$' + result.data.pending_amount;
+            }
+            if (paidDisplay) {
+                paidDisplay.textContent = '$' + result.data.paid_amount;
+            }
+            if (result.data.can_close_order) {
+                closeOrderForm.classList.remove('d-none');
+            } else {
+                closeOrderForm.classList.add('d-none');
+            }
+            refreshPaymentMath();
+            priceModal.hide();
+            pushAjaxMessage(result.data.message, 'success');
+        })
+        .catch(function () {
+            editPriceErrors.textContent = 'Error de conexión. Intenta de nuevo.';
+        });
+    });
 
     function rowTotal(row) {
         return Number(row.dataset.itemTotal || 0);
@@ -809,6 +1129,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (paymentStatusBadge) {
                     paymentStatusBadge.textContent = 'Pagado';
                     paymentStatusBadge.className = 'badge text-bg-success';
+                }
+                var editPriceButton = row.querySelector('.js-edit-price');
+                if (editPriceButton) {
+                    var editPriceCell = editPriceButton.closest('td');
+                    if (editPriceCell) {
+                        editPriceCell.innerHTML = '';
+                    }
                 }
             });
 
