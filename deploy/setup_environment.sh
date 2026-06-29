@@ -1,0 +1,203 @@
+#!/bin/bash
+set -euo pipefail
+
+# Uso:
+#   sudo bash deploy/setup_environment.sh <ambiente> <proyecto> <puerto> <dominio>
+# Ejemplo:
+#   sudo bash deploy/setup_environment.sh desarrollo bar 9301 bar-dev
+
+if [ "$#" -ne 4 ]; then
+    echo "Uso: $0 <desarrollo|calidad|produccion> <proyecto> <puerto> <dominio>"
+    exit 1
+fi
+
+ambiente="$1"
+proyecto="$2"
+puerto="$3"
+dominio_base="$4"
+
+github_owner="${GITHUB_OWNER:-evallardy}"
+repo_url="https://github.com/${github_owner}/${proyecto}.git"
+
+case "$ambiente" in
+    desarrollo)
+        prefijo="des"
+        ruta_base="/home/desa"
+        service_user="desa"
+        ;;
+    calidad)
+        prefijo=""
+        ruta_base="/home/iagevm"
+        service_user="iagevm"
+        ;;
+    produccion)
+        prefijo=""
+        ruta_base="/home/produccion"
+        service_user="produccion"
+        ;;
+    *)
+        echo "El ambiente debe ser desarrollo, calidad o produccion."
+        exit 1
+        ;;
+esac
+
+service_name="${prefijo}${proyecto}"
+dominio_fqdn="${dominio_base}.iagmexico.com"
+dominio_www="www.${dominio_base}.iagmexico.com"
+
+app_dir="${ruta_base}/${proyecto}"
+venv_dir="${app_dir}/.venv"
+deploy_dir="${app_dir}/deploy"
+env_file="${deploy_dir}/.env.deploy"
+logs_dir="${app_dir}/logs"
+nginx_available="/etc/nginx/sites-available/${service_name}.conf"
+nginx_enabled="/etc/nginx/sites-enabled/${service_name}.conf"
+supervisor_conf="/etc/supervisor/conf.d/${service_name}.conf"
+gunicorn_socket="/tmp/gunicorn-${service_name}.sock"
+
+if [ -d "$app_dir" ]; then
+    echo "La carpeta ${app_dir} ya existe. Eliminela o respaldela antes de continuar."
+    exit 1
+fi
+
+echo "=== Preparando estructura para ${service_name} ==="
+sudo rm -f "$supervisor_conf" "$nginx_enabled" "$nginx_available"
+mkdir -p "$ruta_base"
+cd "$ruta_base"
+
+echo "=== Clonando repositorio ${repo_url} ==="
+git clone "$repo_url" "$app_dir"
+
+mkdir -p "$logs_dir"
+touch "$logs_dir/err.log" "$logs_dir/out.log" "$logs_dir/nginx-access.log" "$logs_dir/nginx-error.log"
+chmod 664 "$logs_dir/err.log" "$logs_dir/out.log" "$logs_dir/nginx-access.log" "$logs_dir/nginx-error.log"
+
+echo "=== Creando entorno virtual ==="
+cd "$app_dir"
+python3 -m venv "$venv_dir"
+. "$venv_dir/bin/activate"
+python -m pip install --upgrade pip setuptools wheel
+pip install -r requirements.txt
+
+echo "=== Preparando archivo de entorno ==="
+if [ ! -f "$env_file" ]; then
+    cat > "$env_file" <<EOF
+DJANGO_SETTINGS_MODULE=bar.settings_prod
+BAR_PROJECT_DIR=${app_dir}
+BAR_VENV_DIR=${venv_dir}
+BAR_ENV_FILE=${env_file}
+BAR_SECRET_KEY=${BAR_SECRET_KEY:-cambia-esta-clave-por-una-larga-y-unica}
+BAR_ALLOWED_HOSTS=${dominio_fqdn},${dominio_www}
+BAR_CSRF_TRUSTED_ORIGINS=https://${dominio_fqdn},https://${dominio_www}
+BAR_DB_ENGINE=${BAR_DB_ENGINE:-django.db.backends.mysql}
+BAR_DB_NAME=${BAR_DB_NAME:-bar_db}
+BAR_DB_USER=${BAR_DB_USER:-bar_user}
+BAR_DB_PASSWORD=${BAR_DB_PASSWORD:-cambia-esta-password}
+BAR_DB_HOST=${BAR_DB_HOST:-127.0.0.1}
+BAR_DB_PORT=${BAR_DB_PORT:-3306}
+BAR_EMAIL_BACKEND=${BAR_EMAIL_BACKEND:-django.core.mail.backends.smtp.EmailBackend}
+BAR_EMAIL_HOST=${BAR_EMAIL_HOST:-sandbox.smtp.mailtrap.io}
+BAR_EMAIL_HOST_USER=${BAR_EMAIL_HOST_USER:-}
+BAR_EMAIL_HOST_PASSWORD=${BAR_EMAIL_HOST_PASSWORD:-}
+BAR_EMAIL_PORT=${BAR_EMAIL_PORT:-2525}
+BAR_EMAIL_USE_TLS=${BAR_EMAIL_USE_TLS:-True}
+BAR_GUNICORN_BIND=unix:${gunicorn_socket}
+BAR_GUNICORN_WORKERS=${BAR_GUNICORN_WORKERS:-3}
+BAR_GUNICORN_WORKER_CLASS=${BAR_GUNICORN_WORKER_CLASS:-sync}
+BAR_GUNICORN_TIMEOUT=${BAR_GUNICORN_TIMEOUT:-120}
+BAR_GUNICORN_GRACEFUL_TIMEOUT=${BAR_GUNICORN_GRACEFUL_TIMEOUT:-30}
+BAR_GUNICORN_KEEPALIVE=${BAR_GUNICORN_KEEPALIVE:-5}
+BAR_GUNICORN_ACCESSLOG=${logs_dir}/gunicorn-access.log
+BAR_GUNICORN_ERRORLOG=${logs_dir}/gunicorn-error.log
+BAR_SESSION_COOKIE_SECURE=${BAR_SESSION_COOKIE_SECURE:-True}
+BAR_CSRF_COOKIE_SECURE=${BAR_CSRF_COOKIE_SECURE:-True}
+BAR_SECURE_SSL_REDIRECT=${BAR_SECURE_SSL_REDIRECT:-True}
+BAR_SECURE_HSTS_SECONDS=${BAR_SECURE_HSTS_SECONDS:-31536000}
+BAR_SECURE_HSTS_INCLUDE_SUBDOMAINS=${BAR_SECURE_HSTS_INCLUDE_SUBDOMAINS:-True}
+BAR_SECURE_HSTS_PRELOAD=${BAR_SECURE_HSTS_PRELOAD:-True}
+EOF
+    chmod 600 "$env_file"
+fi
+
+if grep -q "cambia-esta-" "$env_file"; then
+    echo "Se creo ${env_file} con placeholders."
+    echo "Edita BAR_SECRET_KEY y BAR_DB_PASSWORD, luego vuelve a ejecutar el mismo comando."
+    exit 2
+fi
+
+set -a
+. "$env_file"
+set +a
+
+echo "=== Ejecutando migraciones y validaciones ==="
+python manage.py migrate --settings=bar.settings_prod
+python manage.py collectstatic --noinput --settings=bar.settings_prod
+python manage.py check --settings=bar.settings_prod
+
+echo "=== Generando configuracion de Supervisor ==="
+cat > "$supervisor_conf" <<EOF
+[program:${service_name}]
+directory=/
+command=/bin/bash -lc 'cd "${app_dir}" && exec /bin/bash "${app_dir}/deploy/gunicorn_start.sh"'
+autostart=true
+autorestart=true
+stopasgroup=true
+killasgroup=true
+stderr_logfile=${logs_dir}/err.log
+stdout_logfile=${logs_dir}/out.log
+user=${service_user}
+environment=LANG="en_US.UTF-8",LC_ALL="en_US.UTF-8",PYTHONUNBUFFERED="1",BAR_PROJECT_DIR="${app_dir}",BAR_VENV_DIR="${venv_dir}",BAR_ENV_FILE="${env_file}"
+EOF
+
+echo "=== Generando configuracion de Nginx ==="
+cat > "$nginx_available" <<EOF
+upstream ${service_name}_upstream {
+    server unix:${gunicorn_socket} fail_timeout=0;
+}
+
+server {
+    listen 80;
+    server_name ${dominio_fqdn} ${dominio_www};
+
+    client_max_body_size 10M;
+    access_log ${logs_dir}/nginx-access.log;
+    error_log ${logs_dir}/nginx-error.log;
+
+    location /static/ {
+        alias ${app_dir}/staticfiles/;
+        access_log off;
+        expires 7d;
+    }
+
+    location /media/ {
+        alias ${app_dir}/media/;
+        access_log off;
+        expires 1d;
+    }
+
+    location / {
+        include proxy_params;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header Host \$http_host;
+        proxy_redirect off;
+        proxy_pass_header Set-Cookie;
+        proxy_pass http://${service_name}_upstream;
+    }
+}
+EOF
+
+ln -sf "$nginx_available" "$nginx_enabled"
+
+echo "=== Recargando servicios ==="
+sudo supervisorctl reread
+sudo supervisorctl update
+sudo supervisorctl restart "$service_name"
+sudo nginx -t
+sudo systemctl reload nginx
+sudo supervisorctl status "$service_name"
+
+deactivate
+
+echo "Despliegue terminado para ${service_name}."
+echo "Archivo de entorno: ${env_file}"
+echo "Repositorio: ${repo_url}"

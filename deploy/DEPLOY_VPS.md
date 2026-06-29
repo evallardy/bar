@@ -122,6 +122,26 @@ sudo supervisorctl restart bar
 sudo systemctl reload nginx
 ```
 
+## 9.1 Automatización con shell
+
+El repositorio incluye [deploy/setup_environment.sh](deploy/setup_environment.sh) para crear una instalación nueva usando el flujo portable del proyecto.
+
+Ejemplo:
+
+```bash
+sudo bash deploy/setup_environment.sh desarrollo bar 9301 bar-dev
+```
+
+Qué hace:
+
+- clona el repo en la ruta del ambiente
+- crea `.venv` e instala dependencias
+- crea `deploy/.env.deploy` con los valores base del proyecto
+- usa `deploy/gunicorn_start.sh` para arrancar con `bar.settings_prod`
+- genera archivos de Supervisor y Nginx coherentes con ese entorno
+
+Si el script se detiene avisando placeholders, edita `deploy/.env.deploy` y vuelve a ejecutarlo.
+
 ## 10. Comandos útiles
 
 ```bash
