@@ -60,10 +60,10 @@ BAR_ENV_FILE=/etc/bar/bar.env
 ```bash
 cd /srv/bar/app
 . .venv/bin/activate
-python manage.py migrate --settings=bar.settings_prod
-python manage.py collectstatic --noinput --settings=bar.settings_prod
-python manage.py bootstrap_bar --settings=bar.settings_prod
-python manage.py check --settings=bar.settings_prod
+python manage.py migrate --settings=<modulo_proyecto>.settings_prod
+python manage.py collectstatic --noinput --settings=<modulo_proyecto>.settings_prod
+python manage.py bootstrap_bar --settings=<modulo_proyecto>.settings_prod
+python manage.py check --settings=<modulo_proyecto>.settings_prod
 ```
 
 ## 6. Supervisor
@@ -115,9 +115,9 @@ cd /srv/bar/app
 git pull origin main
 . .venv/bin/activate
 pip install -r requirements.txt
-python manage.py migrate --settings=bar.settings_prod
-python manage.py collectstatic --noinput --settings=bar.settings_prod
-python manage.py check --settings=bar.settings_prod
+python manage.py migrate --settings=<modulo_proyecto>.settings_prod
+python manage.py collectstatic --noinput --settings=<modulo_proyecto>.settings_prod
+python manage.py check --settings=<modulo_proyecto>.settings_prod
 sudo supervisorctl restart bar
 sudo systemctl reload nginx
 ```
@@ -145,7 +145,7 @@ Qué hace:
 - clona el repo en la ruta del ambiente
 - crea `.venv` e instala dependencias
 - crea `deploy/.env.deploy` con los valores base del proyecto
-- usa `deploy/gunicorn_start.sh` para arrancar con `bar.settings_prod`
+- usa `deploy/gunicorn_start.sh` para arrancar con `<modulo_proyecto>.settings_prod`
 - genera archivos de Supervisor y Nginx coherentes con ese entorno
 
 Si el script se detiene avisando placeholders, edita `deploy/.env.deploy` y vuelve a ejecutarlo.
@@ -162,7 +162,7 @@ Qué hace:
 - ejecuta `git pull --ff-only origin main`
 - actualiza dependencias del virtualenv
 - carga `deploy/.env.deploy`
-- ejecuta `migrate`, `collectstatic` y `check`
+- ejecuta `migrate`, `collectstatic` y `check` con el modulo Django del proyecto
 - reinicia Supervisor y recarga Nginx
 
 ## 10. Comandos útiles

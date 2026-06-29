@@ -14,7 +14,8 @@ else
 fi
 
 GUNICORN_CONFIG="${BAR_GUNICORN_CONFIG:-$PROJECT_DIR/deploy/gunicorn.conf.py}"
-GUNICORN_APP="${BAR_GUNICORN_APP:-bar.wsgi:application}"
+DEFAULT_DJANGO_MODULE="$(basename "$PROJECT_DIR")"
+GUNICORN_APP="${BAR_GUNICORN_APP:-${DEFAULT_DJANGO_MODULE}.wsgi:application}"
 
 cd "$PROJECT_DIR"
 
@@ -24,7 +25,7 @@ if [ -f "$ENV_FILE" ]; then
   set +a
 fi
 
-export DJANGO_SETTINGS_MODULE=${DJANGO_SETTINGS_MODULE:-bar.settings_prod}
+export DJANGO_SETTINGS_MODULE=${DJANGO_SETTINGS_MODULE:-${DEFAULT_DJANGO_MODULE}.settings_prod}
 
 exec "$VENV_DIR/bin/gunicorn" \
   --config "$GUNICORN_CONFIG" \

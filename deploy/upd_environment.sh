@@ -1,6 +1,35 @@
 #!/bin/bash
 set -euo pipefail
 
+current_step="inicio"
+
+log_step() {
+    current_step="$1"
+    echo "=== ${current_step} ==="
+}
+
+on_error() {
+    local exit_code=$?
+    local line_no=$1
+    echo ""
+    echo "[ERROR] La actualizacion fallo en el paso: ${current_step}"
+    echo "[ERROR] Linea: ${line_no}"
+    echo "[ERROR] Comando: ${BASH_COMMAND}"
+    echo "[ERROR] Codigo de salida: ${exit_code}"
+    exit "$exit_code"
+}
+
+on_exit() {
+    local exit_code=$?
+    if [ "$exit_code" -eq 0 ]; then
+        echo ""
+        echo "[OK] Actualizacion completada correctamente para ${service_name:-proyecto}."
+    fi
+}
+
+trap 'on_error ${LINENO}' ERR
+trap on_exit EXIT
+
 # Uso:
 #   sudo bash deploy/upd_environment.sh <ambiente> <proyecto>
 # Ejemplo:
@@ -13,6 +42,8 @@ fi
 
 ambiente="$1"
 proyecto="$2"
+django_module="${DJANGO_PROJECT_MODULE:-$proyecto}"
+settings_module="${DJANGO_SETTINGS_MODULE_OVERRIDE:-${django_module}.settings_prod}"
 
 case "$ambiente" in
     desarrollo)
@@ -53,32 +84,30 @@ if grep -q "cambia-esta-" "$env_file"; then
     exit 2
 fi
 
-echo "=== Actualizando ${service_name} desde GitHub ==="
+log_step "Actualizando ${service_name} desde GitHub"
 cd "$app_dir"
 git fetch origin
 git pull --ff-only origin main
 
-echo "=== Activando entorno virtual ==="
+log_step "Activando entorno virtual"
 . "$venv_dir/bin/activate"
 python -m pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt
 
-echo "=== Cargando variables de entorno ==="
+log_step "Cargando variables de entorno"
 set -a
 . "$env_file"
 set +a
 
-echo "=== Ejecutando pasos Django ==="
-python manage.py migrate --settings=bar.settings_prod
-python manage.py collectstatic --noinput --settings=bar.settings_prod
-python manage.py check --settings=bar.settings_prod
+log_step "Ejecutando pasos Django"
+python manage.py migrate --settings="$settings_module"
+python manage.py collectstatic --noinput --settings="$settings_module"
+python manage.py check --settings="$settings_module"
 
-echo "=== Reiniciando servicios ==="
+log_step "Reiniciando servicios"
 sudo supervisorctl restart "$service_name"
 sudo nginx -t
 sudo systemctl reload nginx
 sudo supervisorctl status "$service_name"
 
 deactivate
-
-echo "Actualizacion terminada para ${service_name}."

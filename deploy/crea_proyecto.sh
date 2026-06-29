@@ -1,6 +1,35 @@
 #!/bin/bash
 set -euo pipefail
 
+current_step="inicio"
+
+log_step() {
+    current_step="$1"
+    echo "=== ${current_step} ==="
+}
+
+on_error() {
+    local exit_code=$?
+    local line_no=$1
+    echo ""
+    echo "[ERROR] El despliegue fallo en el paso: ${current_step}"
+    echo "[ERROR] Linea: ${line_no}"
+    echo "[ERROR] Comando: ${BASH_COMMAND}"
+    echo "[ERROR] Codigo de salida: ${exit_code}"
+    exit "$exit_code"
+}
+
+on_exit() {
+    local exit_code=$?
+    if [ "$exit_code" -eq 0 ]; then
+        echo ""
+        echo "[OK] Despliegue completado correctamente para ${service_name:-proyecto}."
+    fi
+}
+
+trap 'on_error ${LINENO}' ERR
+trap on_exit EXIT
+
 # Uso:
 #   sudo bash deploy/crea_proyecto.sh <ambiente> <proyecto> <puerto> <dominio>
 # Ejemplo:
@@ -15,9 +44,17 @@ ambiente="$1"
 proyecto="$2"
 puerto="$3"
 dominio_base="$4"
+django_module="${DJANGO_PROJECT_MODULE:-$proyecto}"
+settings_module="${DJANGO_SETTINGS_MODULE_OVERRIDE:-${django_module}.settings_prod}"
 
 github_owner="${GITHUB_OWNER:-evallardy}"
 repo_url="https://github.com/${github_owner}/${proyecto}.git"
+
+write_env_var() {
+    local key="$1"
+    local value="$2"
+    printf '%s=%q\n' "$key" "$value" >> "$env_file"
+}
 
 case "$ambiente" in
     desarrollo)
@@ -47,6 +84,7 @@ venv_dir="${app_dir}/.venv"
 deploy_dir="${app_dir}/deploy"
 env_file="${deploy_dir}/.env.deploy"
 logs_dir="${app_dir}/logs"
+migration_script="${app_dir}/migracion.sh"
 nginx_available="/etc/nginx/sites-available/${service_name}.conf"
 nginx_enabled="/etc/nginx/sites-enabled/${service_name}.conf"
 supervisor_conf="/etc/supervisor/conf.d/${service_name}.conf"
@@ -58,14 +96,14 @@ if [ ! -d "$app_dir" ]; then
     first_install=true
 fi
 
-echo "=== Preparando estructura para ${service_name} ==="
+log_step "Preparando estructura para ${service_name}"
 mkdir -p "$ruta_base"
 
 if [ "$first_install" = true ]; then
     sudo rm -f "$supervisor_conf" "$nginx_enabled" "$nginx_available"
     cd "$ruta_base"
 
-    echo "=== Clonando repositorio ${repo_url} ==="
+    log_step "Clonando repositorio ${repo_url}"
     git clone "$repo_url" "$app_dir"
 else
     echo "La carpeta ${app_dir} ya existe. Se reutilizara para completar o rehacer la configuracion."
@@ -75,7 +113,7 @@ mkdir -p "$logs_dir"
 touch "$logs_dir/err.log" "$logs_dir/out.log" "$logs_dir/nginx-access.log" "$logs_dir/nginx-error.log"
 chmod 664 "$logs_dir/err.log" "$logs_dir/out.log" "$logs_dir/nginx-access.log" "$logs_dir/nginx-error.log"
 
-echo "=== Creando entorno virtual ==="
+log_step "Creando o reutilizando entorno virtual"
 cd "$app_dir"
 if [ ! -d "$venv_dir" ]; then
     python3 -m venv "$venv_dir"
@@ -84,48 +122,86 @@ fi
 python -m pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt
 
-echo "=== Preparando archivo de entorno ==="
+log_step "Preparando archivo de entorno"
 if [ ! -f "$env_file" ]; then
-    cat > "$env_file" <<EOF
-DJANGO_SETTINGS_MODULE=bar.settings_prod
-BAR_PROJECT_DIR=${app_dir}
-BAR_VENV_DIR=${venv_dir}
-BAR_ENV_FILE=${env_file}
-BAR_SECRET_KEY=${BAR_SECRET_KEY:-cambia-esta-clave-por-una-larga-y-unica}
-BAR_ALLOWED_HOSTS=${dominio_fqdn},${dominio_www}
-BAR_CSRF_TRUSTED_ORIGINS=https://${dominio_fqdn},https://${dominio_www}
-BAR_DB_ENGINE=${BAR_DB_ENGINE:-django.db.backends.mysql}
-BAR_DB_NAME=${BAR_DB_NAME:-bar_db}
-BAR_DB_USER=${BAR_DB_USER:-bar_user}
-BAR_DB_PASSWORD=${BAR_DB_PASSWORD:-cambia-esta-password}
-BAR_DB_HOST=${BAR_DB_HOST:-127.0.0.1}
-BAR_DB_PORT=${BAR_DB_PORT:-3306}
-BAR_EMAIL_BACKEND=${BAR_EMAIL_BACKEND:-django.core.mail.backends.smtp.EmailBackend}
-BAR_EMAIL_HOST=${BAR_EMAIL_HOST:-sandbox.smtp.mailtrap.io}
-BAR_EMAIL_HOST_USER=${BAR_EMAIL_HOST_USER:-}
-BAR_EMAIL_HOST_PASSWORD=${BAR_EMAIL_HOST_PASSWORD:-}
-BAR_EMAIL_PORT=${BAR_EMAIL_PORT:-2525}
-BAR_EMAIL_USE_TLS=${BAR_EMAIL_USE_TLS:-True}
-BAR_GUNICORN_BIND=unix:${gunicorn_socket}
-BAR_GUNICORN_WORKERS=${BAR_GUNICORN_WORKERS:-3}
-BAR_GUNICORN_WORKER_CLASS=${BAR_GUNICORN_WORKER_CLASS:-sync}
-BAR_GUNICORN_TIMEOUT=${BAR_GUNICORN_TIMEOUT:-120}
-BAR_GUNICORN_GRACEFUL_TIMEOUT=${BAR_GUNICORN_GRACEFUL_TIMEOUT:-30}
-BAR_GUNICORN_KEEPALIVE=${BAR_GUNICORN_KEEPALIVE:-5}
-BAR_GUNICORN_ACCESSLOG=${logs_dir}/gunicorn-access.log
-BAR_GUNICORN_ERRORLOG=${logs_dir}/gunicorn-error.log
-BAR_SESSION_COOKIE_SECURE=${BAR_SESSION_COOKIE_SECURE:-True}
-BAR_CSRF_COOKIE_SECURE=${BAR_CSRF_COOKIE_SECURE:-True}
-BAR_SECURE_SSL_REDIRECT=${BAR_SECURE_SSL_REDIRECT:-True}
-BAR_SECURE_HSTS_SECONDS=${BAR_SECURE_HSTS_SECONDS:-31536000}
-BAR_SECURE_HSTS_INCLUDE_SUBDOMAINS=${BAR_SECURE_HSTS_INCLUDE_SUBDOMAINS:-True}
-BAR_SECURE_HSTS_PRELOAD=${BAR_SECURE_HSTS_PRELOAD:-True}
+    : > "$env_file"
+    cat >> "$env_file" <<'EOF'
+############################################################
+### INICIO VARIABLES OBLIGATORIAS PARA EDITAR A MANO     ###
+############################################################
+# Cambia estos valores antes de volver a ejecutar el shell.
+# Si dejas los placeholders, el despliegue se detendra.
+EOF
+    write_env_var "DJANGO_SETTINGS_MODULE" "$settings_module"
+    write_env_var "BAR_PROJECT_DIR" "$app_dir"
+    write_env_var "BAR_VENV_DIR" "$venv_dir"
+    write_env_var "BAR_ENV_FILE" "$env_file"
+    write_env_var "BAR_GUNICORN_APP" "${django_module}.wsgi:application"
+    write_env_var "BAR_SECRET_KEY" "${BAR_SECRET_KEY:-cambia-esta-clave-por-una-larga-y-unica}"
+    write_env_var "BAR_DB_ENGINE" "${BAR_DB_ENGINE:-django.db.backends.mysql}"
+    write_env_var "BAR_DB_NAME" "${BAR_DB_NAME:-bar_db}"
+    write_env_var "BAR_DB_USER" "${BAR_DB_USER:-bar_user}"
+    write_env_var "BAR_DB_PASSWORD" "${BAR_DB_PASSWORD:-cambia-esta-password}"
+    write_env_var "BAR_DB_HOST" "${BAR_DB_HOST:-127.0.0.1}"
+    write_env_var "BAR_DB_PORT" "${BAR_DB_PORT:-3306}"
+    cat >> "$env_file" <<'EOF'
+############################################################
+### FIN VARIABLES OBLIGATORIAS PARA EDITAR A MANO        ###
+############################################################
+
+############################################################
+### INICIO VARIABLES GENERADAS AUTOMATICAMENTE           ###
+############################################################
+EOF
+    write_env_var "BAR_ALLOWED_HOSTS" "${dominio_fqdn},${dominio_www}"
+    write_env_var "BAR_CSRF_TRUSTED_ORIGINS" "https://${dominio_fqdn},https://${dominio_www}"
+    write_env_var "BAR_EMAIL_BACKEND" "${BAR_EMAIL_BACKEND:-django.core.mail.backends.smtp.EmailBackend}"
+    write_env_var "BAR_EMAIL_HOST" "${BAR_EMAIL_HOST:-sandbox.smtp.mailtrap.io}"
+    write_env_var "BAR_EMAIL_HOST_USER" "${BAR_EMAIL_HOST_USER:-}"
+    write_env_var "BAR_EMAIL_HOST_PASSWORD" "${BAR_EMAIL_HOST_PASSWORD:-}"
+    write_env_var "BAR_EMAIL_PORT" "${BAR_EMAIL_PORT:-2525}"
+    write_env_var "BAR_EMAIL_USE_TLS" "${BAR_EMAIL_USE_TLS:-True}"
+    write_env_var "BAR_GUNICORN_BIND" "unix:${gunicorn_socket}"
+    write_env_var "BAR_GUNICORN_WORKERS" "${BAR_GUNICORN_WORKERS:-3}"
+    write_env_var "BAR_GUNICORN_WORKER_CLASS" "${BAR_GUNICORN_WORKER_CLASS:-sync}"
+    write_env_var "BAR_GUNICORN_TIMEOUT" "${BAR_GUNICORN_TIMEOUT:-120}"
+    write_env_var "BAR_GUNICORN_GRACEFUL_TIMEOUT" "${BAR_GUNICORN_GRACEFUL_TIMEOUT:-30}"
+    write_env_var "BAR_GUNICORN_KEEPALIVE" "${BAR_GUNICORN_KEEPALIVE:-5}"
+    write_env_var "BAR_GUNICORN_ACCESSLOG" "${logs_dir}/gunicorn-access.log"
+    write_env_var "BAR_GUNICORN_ERRORLOG" "${logs_dir}/gunicorn-error.log"
+    write_env_var "BAR_SESSION_COOKIE_SECURE" "${BAR_SESSION_COOKIE_SECURE:-True}"
+    write_env_var "BAR_CSRF_COOKIE_SECURE" "${BAR_CSRF_COOKIE_SECURE:-True}"
+    write_env_var "BAR_SECURE_SSL_REDIRECT" "${BAR_SECURE_SSL_REDIRECT:-True}"
+    write_env_var "BAR_SECURE_HSTS_SECONDS" "${BAR_SECURE_HSTS_SECONDS:-31536000}"
+    write_env_var "BAR_SECURE_HSTS_INCLUDE_SUBDOMAINS" "${BAR_SECURE_HSTS_INCLUDE_SUBDOMAINS:-True}"
+    write_env_var "BAR_SECURE_HSTS_PRELOAD" "${BAR_SECURE_HSTS_PRELOAD:-True}"
+    cat >> "$env_file" <<'EOF'
+############################################################
+### FIN VARIABLES GENERADAS AUTOMATICAMENTE              ###
+############################################################
 EOF
     chmod 600 "$env_file"
 fi
 
+log_step "Generando script de migracion"
+cat > "$migration_script" <<EOF
+#!/bin/bash
+set -euo pipefail
+
+PROJECT_DIR="\$(cd -- "\$(dirname -- "\${BASH_SOURCE[0]}")" && pwd)"
+
+cd "\$PROJECT_DIR"
+. "\$PROJECT_DIR/.venv/bin/activate"
+set -a
+. "\$PROJECT_DIR/deploy/.env.deploy"
+set +a
+python manage.py migrate --settings="${settings_module}"
+EOF
+chmod +x "$migration_script"
+
 if grep -q "cambia-esta-" "$env_file"; then
     echo "Se creo ${env_file} con placeholders."
+    echo "Busca el bloque 'INICIO VARIABLES OBLIGATORIAS PARA EDITAR A MANO'."
     echo "Edita BAR_SECRET_KEY y BAR_DB_PASSWORD, luego vuelve a ejecutar el mismo comando."
     exit 2
 fi
@@ -134,12 +210,12 @@ set -a
 . "$env_file"
 set +a
 
-echo "=== Ejecutando migraciones y validaciones ==="
-python manage.py migrate --settings=bar.settings_prod
-python manage.py collectstatic --noinput --settings=bar.settings_prod
-python manage.py check --settings=bar.settings_prod
+log_step "Ejecutando migraciones y validaciones"
+python manage.py migrate --settings="$settings_module"
+python manage.py collectstatic --noinput --settings="$settings_module"
+python manage.py check --settings="$settings_module"
 
-echo "=== Generando configuracion de Supervisor ==="
+log_step "Generando configuracion de Supervisor"
 cat > "$supervisor_conf" <<EOF
 [program:${service_name}]
 directory=/
@@ -154,7 +230,7 @@ user=${service_user}
 environment=LANG="en_US.UTF-8",LC_ALL="en_US.UTF-8",PYTHONUNBUFFERED="1",BAR_PROJECT_DIR="${app_dir}",BAR_VENV_DIR="${venv_dir}",BAR_ENV_FILE="${env_file}"
 EOF
 
-echo "=== Generando configuracion de Nginx ==="
+log_step "Generando configuracion de Nginx"
 cat > "$nginx_available" <<EOF
 upstream ${service_name}_upstream {
     server unix:${gunicorn_socket} fail_timeout=0;
@@ -193,7 +269,7 @@ EOF
 
 ln -sf "$nginx_available" "$nginx_enabled"
 
-echo "=== Recargando servicios ==="
+log_step "Recargando servicios"
 sudo supervisorctl reread
 sudo supervisorctl update
 sudo supervisorctl restart "$service_name"
@@ -203,6 +279,5 @@ sudo supervisorctl status "$service_name"
 
 deactivate
 
-echo "Despliegue terminado para ${service_name}."
 echo "Archivo de entorno: ${env_file}"
 echo "Repositorio: ${repo_url}"
