@@ -126,6 +126,8 @@ Entidades principales:
 
 Variables soportadas por configuración:
 
+Las variables de lista, como `BAR_ALLOWED_HOSTS` y `BAR_CSRF_TRUSTED_ORIGINS`, se pasan separadas por comas.
+
 - `BAR_DEBUG`
 - `BAR_SECRET_KEY`
 - `BAR_ALLOWED_HOSTS`

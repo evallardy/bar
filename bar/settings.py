@@ -7,6 +7,11 @@ def env_bool(name, default=False):
         return default
     return value.strip().lower() in {'1', 'true', 'yes', 'on'}
 
+
+def env_list(name, default=''):
+    value = os.environ.get(name, default)
+    return [item.strip() for item in value.split(',') if item.strip()]
+
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False
 SESSION_COOKIE_AGE = 31536000
 SESSION_SAVE_EVERY_REQUEST = True
@@ -37,16 +42,15 @@ SECRET_KEY = os.environ.get('BAR_SECRET_KEY', 'django-insecure-local-dev-key-cha
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env_bool('BAR_DEBUG', default=True)
 
-ALLOWED_HOSTS = [
-    'bar.iagmexico.com',
-    'www.bar.iagmexico.com',
-    '108.175.4.49',
-    '127.0.0.1',
-    'localhost',
-    '0.0.0.0',
-]
+ALLOWED_HOSTS = env_list(
+    'BAR_ALLOWED_HOSTS',
+    default='bar.iagmexico.com,www.bar.iagmexico.com,108.175.4.49,127.0.0.1,localhost,0.0.0.0',
+)
 
-CSRF_TRUSTED_ORIGINS = ['https://bar.iagmexico.com','https://www.bar.iagmexico.com']
+CSRF_TRUSTED_ORIGINS = env_list(
+    'BAR_CSRF_TRUSTED_ORIGINS',
+    default='https://bar.iagmexico.com,https://www.bar.iagmexico.com',
+)
 
 DECIMAL_SEPARATOR = ',' 
 USE_THOUSAND_SEPARATOR = True
