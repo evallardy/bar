@@ -11,12 +11,12 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = False
 SESSION_COOKIE_AGE = 31536000
 SESSION_SAVE_EVERY_REQUEST = True
 
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'sandbox.smtp.mailtrap.io'
-EMAIL_HOST_USER = 'd42925875de988'
-EMAIL_HOST_PASSWORD = '********d5a0'
-EMAIL_PORT = '2525'
-EMAIL_USE_TLS = True
+EMAIL_BACKEND = os.environ.get('BAR_EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
+EMAIL_HOST = os.environ.get('BAR_EMAIL_HOST', 'sandbox.smtp.mailtrap.io')
+EMAIL_HOST_USER = os.environ.get('BAR_EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.environ.get('BAR_EMAIL_HOST_PASSWORD', '')
+EMAIL_PORT = int(os.environ.get('BAR_EMAIL_PORT', '2525'))
+EMAIL_USE_TLS = env_bool('BAR_EMAIL_USE_TLS', default=True)
 
 from operator import truediv
 from pathlib import Path
@@ -32,7 +32,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/4.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-g94__m*&7fvv2avmws^ez%))yq^=t%^o6a@#6^vz%%$q65l3(z'
+SECRET_KEY = os.environ.get('BAR_SECRET_KEY', 'django-insecure-local-dev-key-change-me')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env_bool('BAR_DEBUG', default=True)
