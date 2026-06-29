@@ -1,11 +1,18 @@
 # Deploy en VPS Linux
 
-Este flujo asume:
+Este flujo asume por defecto:
 
 - dominio: `bar.iagmexico.com`
 - app en `/srv/bar/app`
 - entorno en `/etc/bar/bar.env`
 - Nginx + Supervisor + Gunicorn
+
+Si tu servidor usa otras rutas, cambia solo estas variables en `/etc/bar/bar.env` y en `deploy/supervisor/bar.conf`:
+
+- `BAR_PROJECT_DIR`
+- `BAR_VENV_DIR`
+- `BAR_ENV_FILE`
+- `BAR_GUNICORN_BIND`
 
 ## 1. Paquetes del servidor
 
@@ -38,6 +45,14 @@ sudo cp deploy/env/bar.env.example /etc/bar/bar.env
 sudo chmod 640 /etc/bar/bar.env
 sudo chown root:www-data /etc/bar/bar.env
 sudo nano /etc/bar/bar.env
+```
+
+Ajusta al menos estas rutas si no usas la estructura por defecto:
+
+```bash
+BAR_PROJECT_DIR=/ruta/a/tu/proyecto
+BAR_VENV_DIR=/ruta/a/tu/proyecto/.venv
+BAR_ENV_FILE=/etc/bar/bar.env
 ```
 
 ## 5. Preparar Django

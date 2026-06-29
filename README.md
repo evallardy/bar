@@ -218,6 +218,8 @@ Suposiciones de estas plantillas:
 - socket Unix de Gunicorn en `/run/gunicorn-bar.sock`
 - logs en `/var/log/bar/`
 
+Estas rutas ya no están fijas en el script de arranque: si tu servidor usa otra estructura, puedes cambiar `BAR_PROJECT_DIR`, `BAR_VENV_DIR`, `BAR_ENV_FILE` y las variables `BAR_GUNICORN_*` sin editar el código del repositorio.
+
 Ejemplo de `/etc/bar/bar.env`:
 
 ```bash

@@ -1,9 +1,12 @@
 #!/bin/bash
 set -e
 
-PROJECT_DIR="/srv/bar/app"
-VENV_DIR="/srv/bar/app/.venv"
-ENV_FILE="/etc/bar/bar.env"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="${BAR_PROJECT_DIR:-$(cd -- "$SCRIPT_DIR/.." && pwd)}"
+VENV_DIR="${BAR_VENV_DIR:-$PROJECT_DIR/.venv}"
+ENV_FILE="${BAR_ENV_FILE:-/etc/bar/bar.env}"
+GUNICORN_CONFIG="${BAR_GUNICORN_CONFIG:-$PROJECT_DIR/deploy/gunicorn.conf.py}"
+GUNICORN_APP="${BAR_GUNICORN_APP:-bar.wsgi:application}"
 
 cd "$PROJECT_DIR"
 
@@ -16,5 +19,5 @@ fi
 export DJANGO_SETTINGS_MODULE=${DJANGO_SETTINGS_MODULE:-bar.settings_prod}
 
 exec "$VENV_DIR/bin/gunicorn" \
-  --config "$PROJECT_DIR/deploy/gunicorn.conf.py" \
-  bar.wsgi:application
+  --config "$GUNICORN_CONFIG" \
+  "$GUNICORN_APP"
