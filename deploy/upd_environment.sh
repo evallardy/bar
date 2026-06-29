@@ -16,15 +16,12 @@ proyecto="$2"
 
 case "$ambiente" in
     desarrollo)
-        prefijo="des"
-        ruta_base="/home/desa"
+        ruta_base="/home/desarrollo"
         ;;
     calidad)
-        prefijo=""
-        ruta_base="/home/iagevm"
+        ruta_base="/home/calidad"
         ;;
     produccion)
-        prefijo=""
         ruta_base="/home/produccion"
         ;;
     *)
@@ -33,7 +30,7 @@ case "$ambiente" in
         ;;
 esac
 
-service_name="${prefijo}${proyecto}"
+service_name="${proyecto}"
 app_dir="${ruta_base}/${proyecto}"
 venv_dir="${app_dir}/.venv"
 env_file="${app_dir}/deploy/.env.deploy"

@@ -132,6 +132,14 @@ Ejemplo:
 sudo bash deploy/crea_proyecto.sh desarrollo bar 9301 bar-dev
 ```
 
+La convención de rutas de los shells es:
+
+- desarrollo: `/home/desarrollo/<proyecto>`
+- calidad: `/home/calidad/<proyecto>`
+- produccion: `/home/produccion/<proyecto>`
+
+En los tres ambientes el servicio de Supervisor y el sitio de Nginx usan el mismo nombre base del proyecto, por ejemplo `bar`.
+
 Qué hace:
 
 - clona el repo en la ruta del ambiente

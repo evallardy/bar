@@ -21,19 +21,16 @@ repo_url="https://github.com/${github_owner}/${proyecto}.git"
 
 case "$ambiente" in
     desarrollo)
-        prefijo="des"
-        ruta_base="/home/desa"
-        service_user="desa"
+        ruta_base="/home/desarrollo"
+        service_user="${BAR_SERVICE_USER:-desarrollo}"
         ;;
     calidad)
-        prefijo=""
-        ruta_base="/home/iagevm"
-        service_user="iagevm"
+        ruta_base="/home/calidad"
+        service_user="${BAR_SERVICE_USER:-calidad}"
         ;;
     produccion)
-        prefijo=""
         ruta_base="/home/produccion"
-        service_user="produccion"
+        service_user="${BAR_SERVICE_USER:-produccion}"
         ;;
     *)
         echo "El ambiente debe ser desarrollo, calidad o produccion."
@@ -41,7 +38,7 @@ case "$ambiente" in
         ;;
 esac
 
-service_name="${prefijo}${proyecto}"
+service_name="${proyecto}"
 dominio_fqdn="${dominio_base}.iagmexico.com"
 dominio_www="www.${dominio_base}.iagmexico.com"
 
