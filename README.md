@@ -130,8 +130,13 @@ Variables soportadas por configuración:
 - `BAR_DB_PASSWORD`
 - `BAR_DB_HOST`
 - `BAR_DB_PORT`
+- `BAR_RUNSERVER_ADDRPORT`
 - `BAR_SESSION_COOKIE_SECURE`
 - `BAR_CSRF_COOKIE_SECURE`
+- `BAR_SECURE_SSL_REDIRECT`
+- `BAR_SECURE_HSTS_SECONDS`
+- `BAR_SECURE_HSTS_INCLUDE_SUBDOMAINS`
+- `BAR_SECURE_HSTS_PRELOAD`
 
 ## Configuración de deploy
 
@@ -157,6 +162,15 @@ Variables mínimas para producción:
 - `BAR_DB_PASSWORD`
 - `BAR_DB_HOST`
 - `BAR_DB_PORT`
+
+Variables recomendadas para endurecer producción:
+
+- `BAR_SESSION_COOKIE_SECURE=True`
+- `BAR_CSRF_COOKIE_SECURE=True`
+- `BAR_SECURE_SSL_REDIRECT=True`
+- `BAR_SECURE_HSTS_SECONDS=31536000`
+- `BAR_SECURE_HSTS_INCLUDE_SUBDOMAINS=True`
+- `BAR_SECURE_HSTS_PRELOAD=True`
 
 Comandos típicos de despliegue:
 
@@ -306,6 +320,8 @@ python manage.py check
 ```
 
 Nota: `manage.py runserver` agrega por defecto `0.0.0.0:8000` si no se especifica una dirección explícita.
+
+Si necesitas otro bind por defecto en desarrollo, puedes definir `BAR_RUNSERVER_ADDRPORT`, por ejemplo `127.0.0.1:9000`.
 
 ## Configuración de pruebas
 
