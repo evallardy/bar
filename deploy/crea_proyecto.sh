@@ -85,6 +85,8 @@ deploy_dir="${app_dir}/deploy"
 env_file="${deploy_dir}/.env.deploy"
 logs_dir="${app_dir}/logs"
 migration_script="${app_dir}/migracion.sh"
+collectstatic_script="${app_dir}/collectstatic.sh"
+restart_script="${app_dir}/restart.sh"
 nginx_available="/etc/nginx/sites-available/${service_name}.conf"
 nginx_enabled="/etc/nginx/sites-enabled/${service_name}.conf"
 supervisor_conf="/etc/supervisor/conf.d/${service_name}.conf"
@@ -199,6 +201,38 @@ python manage.py migrate --settings="${settings_module}"
 EOF
 chmod +x "$migration_script"
 
+log_step "Generando script de collectstatic"
+cat > "$collectstatic_script" <<EOF
+#!/bin/bash
+set -euo pipefail
+
+PROJECT_DIR="\$(cd -- "\$(dirname -- "\${BASH_SOURCE[0]}")" && pwd)"
+
+cd "\$PROJECT_DIR"
+. "\$PROJECT_DIR/.venv/bin/activate"
+set -a
+. "\$PROJECT_DIR/deploy/.env.deploy"
+set +a
+python manage.py collectstatic --noinput --settings="${settings_module}"
+EOF
+chmod +x "$collectstatic_script"
+
+log_step "Generando script de reinicio"
+cat > "$restart_script" <<EOF
+#!/bin/bash
+set -euo pipefail
+
+SERVICE_NAME="${service_name}"
+
+sudo supervisorctl reread
+sudo supervisorctl update
+sudo supervisorctl restart "\$SERVICE_NAME"
+sudo nginx -t
+sudo systemctl reload nginx
+sudo supervisorctl status "\$SERVICE_NAME"
+EOF
+chmod +x "$restart_script"
+
 if grep -q "cambia-esta-" "$env_file"; then
     echo "Se creo ${env_file} con placeholders."
     echo "Busca el bloque 'INICIO VARIABLES OBLIGATORIAS PARA EDITAR A MANO'."
@@ -229,6 +263,8 @@ stdout_logfile=${logs_dir}/out.log
 user=${service_user}
 environment=LANG="en_US.UTF-8",LC_ALL="en_US.UTF-8",PYTHONUNBUFFERED="1",BAR_PROJECT_DIR="${app_dir}",BAR_VENV_DIR="${venv_dir}",BAR_ENV_FILE="${env_file}"
 EOF
+
+chmod +x "${app_dir}/deploy/gunicorn_start.sh"
 
 log_step "Generando configuracion de Nginx"
 cat > "$nginx_available" <<EOF

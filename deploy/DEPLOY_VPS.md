@@ -145,6 +145,7 @@ Qué hace:
 - clona el repo en la ruta del ambiente
 - crea `.venv` e instala dependencias
 - crea `deploy/.env.deploy` con los valores base del proyecto
+- genera `migracion.sh`, `collectstatic.sh` y `restart.sh` en la raíz del proyecto
 - usa `deploy/gunicorn_start.sh` para arrancar con `<modulo_proyecto>.settings_prod`
 - genera archivos de Supervisor y Nginx coherentes con ese entorno
 
