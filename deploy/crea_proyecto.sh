@@ -2,9 +2,9 @@
 set -euo pipefail
 
 # Uso:
-#   sudo bash deploy/setup_environment.sh <ambiente> <proyecto> <puerto> <dominio>
+#   sudo bash deploy/crea_proyecto.sh <ambiente> <proyecto> <puerto> <dominio>
 # Ejemplo:
-#   sudo bash deploy/setup_environment.sh desarrollo bar 9301 bar-dev
+#   sudo bash deploy/crea_proyecto.sh desarrollo bar 9301 bar-dev
 
 if [ "$#" -ne 4 ]; then
     echo "Uso: $0 <desarrollo|calidad|produccion> <proyecto> <puerto> <dominio>"
@@ -55,18 +55,24 @@ nginx_enabled="/etc/nginx/sites-enabled/${service_name}.conf"
 supervisor_conf="/etc/supervisor/conf.d/${service_name}.conf"
 gunicorn_socket="/tmp/gunicorn-${service_name}.sock"
 
-if [ -d "$app_dir" ]; then
-    echo "La carpeta ${app_dir} ya existe. Eliminela o respaldela antes de continuar."
-    exit 1
+first_install=false
+
+if [ ! -d "$app_dir" ]; then
+    first_install=true
 fi
 
 echo "=== Preparando estructura para ${service_name} ==="
-sudo rm -f "$supervisor_conf" "$nginx_enabled" "$nginx_available"
 mkdir -p "$ruta_base"
-cd "$ruta_base"
 
-echo "=== Clonando repositorio ${repo_url} ==="
-git clone "$repo_url" "$app_dir"
+if [ "$first_install" = true ]; then
+    sudo rm -f "$supervisor_conf" "$nginx_enabled" "$nginx_available"
+    cd "$ruta_base"
+
+    echo "=== Clonando repositorio ${repo_url} ==="
+    git clone "$repo_url" "$app_dir"
+else
+    echo "La carpeta ${app_dir} ya existe. Se reutilizara para completar o rehacer la configuracion."
+fi
 
 mkdir -p "$logs_dir"
 touch "$logs_dir/err.log" "$logs_dir/out.log" "$logs_dir/nginx-access.log" "$logs_dir/nginx-error.log"
@@ -74,7 +80,9 @@ chmod 664 "$logs_dir/err.log" "$logs_dir/out.log" "$logs_dir/nginx-access.log" "
 
 echo "=== Creando entorno virtual ==="
 cd "$app_dir"
-python3 -m venv "$venv_dir"
+if [ ! -d "$venv_dir" ]; then
+    python3 -m venv "$venv_dir"
+fi
 . "$venv_dir/bin/activate"
 python -m pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt

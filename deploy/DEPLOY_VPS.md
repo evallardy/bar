@@ -124,12 +124,12 @@ sudo systemctl reload nginx
 
 ## 9.1 Automatización con shell
 
-El repositorio incluye [deploy/setup_environment.sh](deploy/setup_environment.sh) para crear una instalación nueva usando el flujo portable del proyecto.
+El repositorio incluye [deploy/crea_proyecto.sh](deploy/crea_proyecto.sh) para crear una instalación nueva usando el flujo portable del proyecto.
 
 Ejemplo:
 
 ```bash
-sudo bash deploy/setup_environment.sh desarrollo bar 9301 bar-dev
+sudo bash deploy/crea_proyecto.sh desarrollo bar 9301 bar-dev
 ```
 
 Qué hace:
@@ -142,10 +142,10 @@ Qué hace:
 
 Si el script se detiene avisando placeholders, edita `deploy/.env.deploy` y vuelve a ejecutarlo.
 
-Para actualizaciones posteriores del mismo ambiente, usa [deploy/update_environment.sh](deploy/update_environment.sh):
+Para actualizaciones posteriores del mismo ambiente, usa [deploy/upd_environment.sh](deploy/upd_environment.sh):
 
 ```bash
-sudo bash deploy/update_environment.sh desarrollo bar
+sudo bash deploy/upd_environment.sh desarrollo bar
 ```
 
 Qué hace:

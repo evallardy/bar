@@ -2,9 +2,9 @@
 set -euo pipefail
 
 # Uso:
-#   sudo bash deploy/update_environment.sh <ambiente> <proyecto>
+#   sudo bash deploy/upd_environment.sh <ambiente> <proyecto>
 # Ejemplo:
-#   sudo bash deploy/update_environment.sh desarrollo bar
+#   sudo bash deploy/upd_environment.sh desarrollo bar
 
 if [ "$#" -ne 2 ]; then
     echo "Uso: $0 <desarrollo|calidad|produccion> <proyecto>"
@@ -40,13 +40,13 @@ env_file="${app_dir}/deploy/.env.deploy"
 
 if [ ! -d "$app_dir" ]; then
     echo "No existe la carpeta ${app_dir}."
-    echo "Primero ejecuta deploy/setup_environment.sh para crear la instalacion inicial."
+    echo "Primero ejecuta deploy/crea_proyecto.sh para crear la instalacion inicial."
     exit 1
 fi
 
 if [ ! -f "$env_file" ]; then
     echo "No existe el archivo de entorno ${env_file}."
-    echo "Crea la instalacion inicial con deploy/setup_environment.sh o restaura ese archivo."
+    echo "Crea la instalacion inicial con deploy/crea_proyecto.sh o restaura ese archivo."
     exit 1
 fi
 
