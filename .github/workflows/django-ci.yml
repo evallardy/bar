@@ -35,5 +35,8 @@ jobs:
       - name: Run Django checks
         run: python manage.py check --settings=bar.settings_test
 
+      - name: Check pending migrations
+        run: python manage.py makemigrations --check --dry-run --settings=bar.settings_test
+
       - name: Run test suite
         run: python manage.py test --settings=bar.settings_test
