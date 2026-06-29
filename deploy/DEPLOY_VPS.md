@@ -129,7 +129,7 @@ El repositorio incluye [deploy/crea_proyecto.sh](deploy/crea_proyecto.sh) para c
 Ejemplo:
 
 ```bash
-sudo bash deploy/crea_proyecto.sh desarrollo bar 9301 bar-dev
+sudo bash deploy/crea_proyecto.sh desarrollo bar bar-dev.iagmexico.com
 ```
 
 La convención de rutas de los shells es:
@@ -145,7 +145,8 @@ Qué hace:
 - clona el repo en la ruta del ambiente
 - crea `.venv` e instala dependencias
 - crea `deploy/.env.deploy` con los valores base del proyecto
-- genera `migracion.sh`, `collectstatic.sh` y `restart.sh` en la raíz del proyecto
+- recibe el dominio completo del sitio, sin asumir un sufijo fijo
+- genera `migracion.sh`, `collectstatic.sh`, `restart.sh` y `status.sh` en la raíz del proyecto
 - usa `deploy/gunicorn_start.sh` para arrancar con `<modulo_proyecto>.settings_prod`
 - genera archivos de Supervisor y Nginx coherentes con ese entorno
 

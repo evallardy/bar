@@ -31,19 +31,18 @@ trap 'on_error ${LINENO}' ERR
 trap on_exit EXIT
 
 # Uso:
-#   sudo bash deploy/crea_proyecto.sh <ambiente> <proyecto> <puerto> <dominio>
+#   sudo bash deploy/crea_proyecto.sh <ambiente> <proyecto> <dominio>
 # Ejemplo:
-#   sudo bash deploy/crea_proyecto.sh desarrollo bar 9301 bar-dev
+#   sudo bash deploy/crea_proyecto.sh desarrollo bar bar-dev.iagmexico.com
 
-if [ "$#" -ne 4 ]; then
-    echo "Uso: $0 <desarrollo|calidad|produccion> <proyecto> <puerto> <dominio>"
+if [ "$#" -ne 3 ]; then
+    echo "Uso: $0 <desarrollo|calidad|produccion> <proyecto> <dominio>"
     exit 1
 fi
 
 ambiente="$1"
 proyecto="$2"
-puerto="$3"
-dominio_base="$4"
+dominio_entrada="$3"
 django_module="${DJANGO_PROJECT_MODULE:-$proyecto}"
 settings_module="${DJANGO_SETTINGS_MODULE_OVERRIDE:-${django_module}.settings_prod}"
 
@@ -76,8 +75,23 @@ case "$ambiente" in
 esac
 
 service_name="${proyecto}"
-dominio_fqdn="${dominio_base}.iagmexico.com"
-dominio_www="www.${dominio_base}.iagmexico.com"
+if [[ "$dominio_entrada" == www.* ]]; then
+    dominio_www="$dominio_entrada"
+    dominio_fqdn="${dominio_entrada#www.}"
+else
+    dominio_fqdn="$dominio_entrada"
+    dominio_www="www.${dominio_entrada}"
+fi
+
+server_names="$dominio_fqdn"
+allowed_hosts="$dominio_fqdn"
+csrf_trusted_origins="https://${dominio_fqdn}"
+
+if [ "$dominio_www" != "$dominio_fqdn" ]; then
+    server_names="${server_names} ${dominio_www}"
+    allowed_hosts="${allowed_hosts},${dominio_www}"
+    csrf_trusted_origins="${csrf_trusted_origins},https://${dominio_www}"
+fi
 
 app_dir="${ruta_base}/${proyecto}"
 venv_dir="${app_dir}/.venv"
@@ -87,6 +101,7 @@ logs_dir="${app_dir}/logs"
 migration_script="${app_dir}/migracion.sh"
 collectstatic_script="${app_dir}/collectstatic.sh"
 restart_script="${app_dir}/restart.sh"
+status_script="${app_dir}/status.sh"
 nginx_available="/etc/nginx/sites-available/${service_name}.conf"
 nginx_enabled="/etc/nginx/sites-enabled/${service_name}.conf"
 supervisor_conf="/etc/supervisor/conf.d/${service_name}.conf"
@@ -155,8 +170,8 @@ EOF
 ### INICIO VARIABLES GENERADAS AUTOMATICAMENTE           ###
 ############################################################
 EOF
-    write_env_var "BAR_ALLOWED_HOSTS" "${dominio_fqdn},${dominio_www}"
-    write_env_var "BAR_CSRF_TRUSTED_ORIGINS" "https://${dominio_fqdn},https://${dominio_www}"
+    write_env_var "BAR_ALLOWED_HOSTS" "$allowed_hosts"
+    write_env_var "BAR_CSRF_TRUSTED_ORIGINS" "$csrf_trusted_origins"
     write_env_var "BAR_EMAIL_BACKEND" "${BAR_EMAIL_BACKEND:-django.core.mail.backends.smtp.EmailBackend}"
     write_env_var "BAR_EMAIL_HOST" "${BAR_EMAIL_HOST:-sandbox.smtp.mailtrap.io}"
     write_env_var "BAR_EMAIL_HOST_USER" "${BAR_EMAIL_HOST_USER:-}"
@@ -233,6 +248,33 @@ sudo supervisorctl status "\$SERVICE_NAME"
 EOF
 chmod +x "$restart_script"
 
+log_step "Generando script de estado"
+cat > "$status_script" <<EOF
+#!/bin/bash
+set -euo pipefail
+
+SERVICE_NAME="${service_name}"
+GUNICORN_SOCKET="${gunicorn_socket}"
+LOGS_DIR="${logs_dir}"
+
+echo "=== Supervisor ==="
+sudo supervisorctl status "\$SERVICE_NAME"
+echo ""
+echo "=== Nginx ==="
+sudo nginx -t
+echo ""
+echo "=== Socket Gunicorn ==="
+if [ -S "\$GUNICORN_SOCKET" ]; then
+    ls -l "\$GUNICORN_SOCKET"
+else
+    echo "No existe el socket \$GUNICORN_SOCKET"
+fi
+echo ""
+echo "=== Ultimas lineas Gunicorn ==="
+tail -n 20 "\$LOGS_DIR/gunicorn-error.log" || true
+EOF
+chmod +x "$status_script"
+
 if grep -q "cambia-esta-" "$env_file"; then
     echo "Se creo ${env_file} con placeholders."
     echo "Busca el bloque 'INICIO VARIABLES OBLIGATORIAS PARA EDITAR A MANO'."
@@ -274,7 +316,7 @@ upstream ${service_name}_upstream {
 
 server {
     listen 80;
-    server_name ${dominio_fqdn} ${dominio_www};
+    server_name ${server_names};
 
     client_max_body_size 10M;
     access_log ${logs_dir}/nginx-access.log;
