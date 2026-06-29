@@ -1,5 +1,7 @@
 # Bar
 
+[![Django CI](https://github.com/evallardy/bar/actions/workflows/django-ci.yml/badge.svg)](https://github.com/evallardy/bar/actions/workflows/django-ci.yml)
+
 Sistema web para operar un bar o restaurante pequeño con flujo de comandas, producción por área, entregas, caja y administración básica. Está construido con Django y una sola aplicación principal llamada `core`.
 
 ## Qué resuelve
@@ -39,6 +41,10 @@ El proyecto centraliza la operación del turno en una interfaz web con módulos 
 - Plantillas Django para frontend
 - Archivos estáticos propios en `static/`
 - Archivos de media para evidencias de pago en `media/`
+
+## Integración continua
+
+El repositorio ejecuta automáticamente `python manage.py check --settings=bar.settings_test` y `python manage.py test --settings=bar.settings_test` en cada push y pull request hacia `main` mediante GitHub Actions.
 
 ## Estructura general
 
