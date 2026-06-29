@@ -142,6 +142,21 @@ Qué hace:
 
 Si el script se detiene avisando placeholders, edita `deploy/.env.deploy` y vuelve a ejecutarlo.
 
+Para actualizaciones posteriores del mismo ambiente, usa [deploy/update_environment.sh](deploy/update_environment.sh):
+
+```bash
+sudo bash deploy/update_environment.sh desarrollo bar
+```
+
+Qué hace:
+
+- entra a la instalación existente del ambiente
+- ejecuta `git pull --ff-only origin main`
+- actualiza dependencias del virtualenv
+- carga `deploy/.env.deploy`
+- ejecuta `migrate`, `collectstatic` y `check`
+- reinicia Supervisor y recarga Nginx
+
 ## 10. Comandos útiles
 
 ```bash
