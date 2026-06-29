@@ -23,12 +23,7 @@ EMAIL_HOST_PASSWORD = os.environ.get('BAR_EMAIL_HOST_PASSWORD', '')
 EMAIL_PORT = int(os.environ.get('BAR_EMAIL_PORT', '2525'))
 EMAIL_USE_TLS = env_bool('BAR_EMAIL_USE_TLS', default=True)
 
-from operator import truediv
 from pathlib import Path
-from django.forms.utils import flatatt
-
-from django.template.defaultfilters import truncatechars
-from django.utils import timezone
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent

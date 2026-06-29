@@ -44,7 +44,7 @@ El proyecto centraliza la operación del turno en una interfaz web con módulos 
 
 ## Integración continua
 
-El repositorio ejecuta automáticamente `python manage.py check --settings=bar.settings_test` y `python manage.py test --settings=bar.settings_test` en cada push y pull request hacia `main` mediante GitHub Actions.
+El repositorio ejecuta automáticamente `python manage.py check --settings=bar.settings_test`, `python manage.py makemigrations --check --dry-run --settings=bar.settings_test` y `python manage.py test --settings=bar.settings_test` en cada push y pull request hacia `main` mediante GitHub Actions.
 
 ## Estructura general
 
