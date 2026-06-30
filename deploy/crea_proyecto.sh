@@ -76,6 +76,7 @@ render_template() {
         -e "s|__ENV_FILE__|$(escape_sed_replacement "$env_file")|g" \
         -e "s|__LOGS_DIR__|$(escape_sed_replacement "$logs_dir")|g" \
         -e "s|__SERVER_NAMES__|$(escape_sed_replacement "$server_names")|g" \
+        -e "s|__UPSTREAM_NAME__|$(escape_sed_replacement "$upstream_name")|g" \
         -e "s|__GUNICORN_SOCKET__|$(escape_sed_replacement "$gunicorn_socket")|g" \
         "$template_path" > "$output_path"
 }
@@ -136,6 +137,7 @@ case "$ambiente" in
 esac
 
 service_name="${proyecto}"
+upstream_name="${proyecto}conn"
 if [[ "$dominio_entrada" == www.* ]]; then
     dominio_www="$dominio_entrada"
     dominio_fqdn="${dominio_entrada#www.}"

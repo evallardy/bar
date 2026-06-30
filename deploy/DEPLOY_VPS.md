@@ -149,6 +149,7 @@ Qué hace:
 - genera `migracion.sh`, `collectstatic.sh`, `restart.sh` y `status.sh` en la raíz del proyecto
 - usa `deploy/gunicorn.sh` como comando directo de Supervisor y desde ahi arranca Gunicorn con `<modulo_proyecto>.settings_prod`
 - toma como base las plantillas [deploy/supervisor/bar.conf](deploy/supervisor/bar.conf) y [deploy/nginx/bar.conf](deploy/nginx/bar.conf)
+- en Nginx genera un upstream con el patron `<proyecto>conn` apuntando al socket de Gunicorn
 - despliega los `.conf` finales en `/etc/supervisor/conf.d/` y `/etc/nginx/sites-available/`
 
 Si el script se detiene avisando placeholders, edita `deploy/.env.deploy` y vuelve a ejecutarlo.
