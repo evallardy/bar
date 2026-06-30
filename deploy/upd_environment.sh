@@ -145,6 +145,9 @@ python manage.py migrate --settings="$settings_module"
 python manage.py collectstatic --noinput --settings="$settings_module"
 python manage.py check --settings="$settings_module"
 
+chmod +x "${app_dir}/deploy/gunicorn_start.sh"
+chmod +x "${app_dir}/deploy/gunicorn.sh"
+
 log_step "Desplegando configuracion de Supervisor y Nginx desde plantillas"
 render_template "$supervisor_template" "$supervisor_conf"
 render_template "$nginx_template" "$nginx_available"

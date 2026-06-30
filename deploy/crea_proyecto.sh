@@ -80,6 +80,42 @@ render_template() {
         "$template_path" > "$output_path"
 }
 
+show_generated_file() {
+    local label="$1"
+    local file_path="$2"
+
+    echo "############################################################"
+    echo "### INICIO ${label}"
+    echo "############################################################"
+    cat "$file_path"
+    echo "############################################################"
+    echo "### FIN ${label}"
+    echo "############################################################"
+}
+
+deploy_template_file() {
+    local label="$1"
+    local template_path="$2"
+    local output_path="$3"
+    local temp_file
+
+    temp_file="$(mktemp)"
+    render_template "$template_path" "$temp_file"
+
+    echo "Archivo destino ${label}: ${output_path}"
+    show_generated_file "$label" "$temp_file"
+
+    install -m 644 "$temp_file" "$output_path"
+    rm -f "$temp_file"
+
+    if [ ! -f "$output_path" ]; then
+        echo "No se pudo crear ${output_path}."
+        exit 1
+    fi
+
+    echo "${label} creado correctamente en ${output_path}"
+}
+
 case "$ambiente" in
     desarrollo)
         ruta_base="/home/desarrollo"
@@ -341,14 +377,16 @@ python manage.py collectstatic --noinput --settings="$settings_module"
 python manage.py check --settings="$settings_module"
 
 log_step "Desplegando configuracion de Supervisor desde plantilla"
-render_template "$supervisor_template" "$supervisor_conf"
+deploy_template_file "ARCHIVO SUPERVISOR" "$supervisor_template" "$supervisor_conf"
 
 chmod +x "${app_dir}/deploy/gunicorn_start.sh"
+chmod +x "${app_dir}/deploy/gunicorn.sh"
 
 log_step "Desplegando configuracion de Nginx desde plantilla"
-render_template "$nginx_template" "$nginx_available"
+deploy_template_file "ARCHIVO NGINX" "$nginx_template" "$nginx_available"
 
 ln -sf "$nginx_available" "$nginx_enabled"
+echo "Enlace Nginx habilitado: ${nginx_enabled} -> ${nginx_available}"
 
 log_step "Recargando servicios"
 sudo supervisorctl reread

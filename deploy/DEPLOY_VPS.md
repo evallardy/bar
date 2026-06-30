@@ -147,7 +147,7 @@ Qué hace:
 - crea `deploy/.env.deploy` con los valores base del proyecto
 - recibe el dominio completo del sitio, sin asumir un sufijo fijo
 - genera `migracion.sh`, `collectstatic.sh`, `restart.sh` y `status.sh` en la raíz del proyecto
-- usa `deploy/gunicorn_start.sh` para arrancar con `<modulo_proyecto>.settings_prod`
+- usa `deploy/gunicorn.sh` como comando directo de Supervisor y desde ahi arranca Gunicorn con `<modulo_proyecto>.settings_prod`
 - toma como base las plantillas [deploy/supervisor/bar.conf](deploy/supervisor/bar.conf) y [deploy/nginx/bar.conf](deploy/nginx/bar.conf)
 - despliega los `.conf` finales en `/etc/supervisor/conf.d/` y `/etc/nginx/sites-available/`
 
