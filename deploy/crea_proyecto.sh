@@ -142,6 +142,28 @@ deploy_template_file() {
     echo "${label} creado correctamente en ${output_path}"
 }
 
+apply_runtime_permissions() {
+    local target_user="$1"
+
+    if ! id "$target_user" > /dev/null 2>&1; then
+        echo "No existe el usuario ${target_user} para asignar permisos de runtime."
+        exit 1
+    fi
+
+    mkdir -p "$logs_dir"
+    touch "$logs_dir/gunicorn-access.log" "$logs_dir/gunicorn-error.log"
+
+    chown -R "$target_user":"$target_user" "$logs_dir"
+    chmod 750 "$logs_dir"
+    chmod 640 "$logs_dir"/*.log
+
+    chown "$target_user":"$target_user" "$env_file"
+    chmod 600 "$env_file"
+
+    chown "$target_user":"$target_user" "${app_dir}/deploy/gunicorn.sh" "${app_dir}/deploy/gunicorn_start.sh"
+    chmod 750 "${app_dir}/deploy/gunicorn.sh" "${app_dir}/deploy/gunicorn_start.sh"
+}
+
 case "$ambiente" in
     desarrollo)
         ruta_base="/home/desarrollo"
@@ -391,6 +413,9 @@ deploy_template_file "ARCHIVO SUPERVISOR" "$supervisor_template" "$supervisor_co
 
 chmod +x "${app_dir}/deploy/gunicorn_start.sh"
 chmod +x "${app_dir}/deploy/gunicorn.sh"
+
+log_step "Aplicando permisos de runtime"
+apply_runtime_permissions "$service_user"
 
 log_step "Desplegando configuracion de Nginx desde plantilla"
 deploy_template_file "ARCHIVO NGINX" "$nginx_template" "$nginx_available"

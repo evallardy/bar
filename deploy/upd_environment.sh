@@ -53,6 +53,28 @@ render_template() {
         "$template_path" > "$output_path"
 }
 
+apply_runtime_permissions() {
+    local target_user="$1"
+
+    if ! id "$target_user" > /dev/null 2>&1; then
+        echo "No existe el usuario ${target_user} para asignar permisos de runtime."
+        exit 1
+    fi
+
+    mkdir -p "$logs_dir"
+    touch "$logs_dir/gunicorn-access.log" "$logs_dir/gunicorn-error.log"
+
+    chown -R "$target_user":"$target_user" "$logs_dir"
+    chmod 750 "$logs_dir"
+    chmod 640 "$logs_dir"/*.log
+
+    chown "$target_user":"$target_user" "$env_file"
+    chmod 600 "$env_file"
+
+    chown "$target_user":"$target_user" "${app_dir}/deploy/gunicorn.sh" "${app_dir}/deploy/gunicorn_start.sh"
+    chmod 750 "${app_dir}/deploy/gunicorn.sh" "${app_dir}/deploy/gunicorn_start.sh"
+}
+
 resolve_service_user() {
     if [ -n "${BAR_SERVICE_USER:-}" ]; then
         printf '%s\n' "$BAR_SERVICE_USER"
@@ -174,6 +196,9 @@ python manage.py check --settings="$settings_module"
 
 chmod +x "${app_dir}/deploy/gunicorn_start.sh"
 chmod +x "${app_dir}/deploy/gunicorn.sh"
+
+log_step "Aplicando permisos de runtime"
+apply_runtime_permissions "$service_user"
 
 log_step "Desplegando configuracion de Supervisor y Nginx desde plantillas"
 render_template "$supervisor_template" "$supervisor_conf"
