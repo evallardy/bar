@@ -75,36 +75,14 @@ apply_runtime_permissions() {
     chmod 750 "${app_dir}/deploy/gunicorn.sh" "${app_dir}/deploy/gunicorn_start.sh"
 }
 
-resolve_service_user() {
-    if [ -n "${BAR_SERVICE_USER:-}" ]; then
-        printf '%s\n' "$BAR_SERVICE_USER"
-        return
-    fi
-
-    local candidate=""
-
-    if [ -d "$app_dir" ]; then
-        candidate="$(stat -c '%U' "$app_dir" 2>/dev/null || true)"
-    fi
-
-    if [ -z "$candidate" ] || [ "$candidate" = "root" ]; then
-        if [ -d "$ruta_base" ]; then
-            candidate="$(stat -c '%U' "$ruta_base" 2>/dev/null || true)"
-        fi
-    fi
-
-    if [ -z "$candidate" ] || [ "$candidate" = "root" ]; then
-        candidate="${SUDO_USER:-${USER:-root}}"
-    fi
-
-    printf '%s\n' "$candidate"
-}
-
 validate_service_user() {
-    if [ "$service_user" = "root" ] && [ -z "${BAR_SERVICE_USER:-}" ]; then
-        echo "No se pudo inferir un usuario valido para Supervisor."
-        echo "Ejecuta el shell indicando BAR_SERVICE_USER, por ejemplo:"
-        echo "BAR_SERVICE_USER=iagevm $0 $ambiente $proyecto"
+    if [ -z "$service_user" ]; then
+        echo "BAR_SERVICE_USER no esta definido en ${env_file}."
+        exit 1
+    fi
+
+    if ! id "$service_user" > /dev/null 2>&1; then
+        echo "No existe el usuario ${service_user} para Supervisor."
         exit 1
     fi
 }
@@ -155,8 +133,7 @@ nginx_available="/etc/nginx/sites-available/${service_name}.conf"
 nginx_enabled="/etc/nginx/sites-enabled/${service_name}.conf"
 supervisor_template="${deploy_dir}/supervisor/bar.conf"
 nginx_template="${deploy_dir}/nginx/bar.conf"
-service_user="$(resolve_service_user)"
-validate_service_user
+service_user=""
 
 if [ ! -d "$app_dir" ]; then
     echo "No existe la carpeta ${app_dir}."
@@ -191,6 +168,8 @@ set -a
 . "$env_file"
 set +a
 
+service_user="${BAR_SERVICE_USER:-}"
+validate_service_user
 gunicorn_socket="${BAR_GUNICORN_BIND#unix:}"
 server_names="${BAR_ALLOWED_HOSTS//,/ }"
 

@@ -129,7 +129,7 @@ El repositorio incluye [deploy/crea_proyecto.sh](deploy/crea_proyecto.sh) para c
 Ejemplo:
 
 ```bash
-sudo bash deploy/crea_proyecto.sh desarrollo bar bar-dev.iagmexico.com
+sudo bash deploy/crea_proyecto.sh desarrollo bar bar-dev.iagmexico.com iagevm
 ```
 
 La convención de rutas de los shells es:
@@ -137,6 +137,8 @@ La convención de rutas de los shells es:
 - desarrollo: `/home/desarrollo/<proyecto>`
 - calidad: `/home/calidad/<proyecto>`
 - produccion: `/home/produccion/<proyecto>`
+
+El cuarto parametro del shell es el usuario con el que debe correr Supervisor y Gunicorn.
 
 En los tres ambientes el servicio de Supervisor y el sitio de Nginx usan el mismo nombre base del proyecto, por ejemplo `bar`.
 

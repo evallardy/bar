@@ -31,18 +31,19 @@ trap 'on_error ${LINENO}' ERR
 trap on_exit EXIT
 
 # Uso:
-#   sudo bash deploy/crea_proyecto.sh <ambiente> <proyecto> <dominio>
+#   sudo bash deploy/crea_proyecto.sh <ambiente> <proyecto> <dominio> <usuario_supervisor>
 # Ejemplo:
-#   sudo bash deploy/crea_proyecto.sh desarrollo bar bar-dev.iagmexico.com
+#   sudo bash deploy/crea_proyecto.sh desarrollo bar bar-dev.iagmexico.com iagevm
 
-if [ "$#" -ne 3 ]; then
-    echo "Uso: $0 <desarrollo|calidad|produccion> <proyecto> <dominio>"
+if [ "$#" -ne 4 ]; then
+    echo "Uso: $0 <desarrollo|calidad|produccion> <proyecto> <dominio> <usuario_supervisor>"
     exit 1
 fi
 
 ambiente="$1"
 proyecto="$2"
 dominio_entrada="$3"
+service_user="$4"
 django_module="${DJANGO_PROJECT_MODULE:-$proyecto}"
 settings_module="${DJANGO_SETTINGS_MODULE_OVERRIDE:-${django_module}.settings_prod}"
 
@@ -81,36 +82,9 @@ render_template() {
         "$template_path" > "$output_path"
 }
 
-resolve_service_user() {
-    if [ -n "${BAR_SERVICE_USER:-}" ]; then
-        printf '%s\n' "$BAR_SERVICE_USER"
-        return
-    fi
-
-    local candidate=""
-
-    if [ -d "$app_dir" ]; then
-        candidate="$(stat -c '%U' "$app_dir" 2>/dev/null || true)"
-    fi
-
-    if [ -z "$candidate" ] || [ "$candidate" = "root" ]; then
-        if [ -d "$ruta_base" ]; then
-            candidate="$(stat -c '%U' "$ruta_base" 2>/dev/null || true)"
-        fi
-    fi
-
-    if [ -z "$candidate" ] || [ "$candidate" = "root" ]; then
-        candidate="${SUDO_USER:-${USER:-root}}"
-    fi
-
-    printf '%s\n' "$candidate"
-}
-
 validate_service_user() {
-    if [ "$service_user" = "root" ] && [ -z "${BAR_SERVICE_USER:-}" ]; then
-        echo "No se pudo inferir un usuario valido para Supervisor."
-        echo "Ejecuta el shell indicando BAR_SERVICE_USER, por ejemplo:"
-        echo "BAR_SERVICE_USER=iagevm $0 $ambiente $proyecto $dominio_entrada"
+    if ! id "$service_user" > /dev/null 2>&1; then
+        echo "No existe el usuario ${service_user} para Supervisor."
         exit 1
     fi
 }
@@ -224,7 +198,6 @@ supervisor_conf="/etc/supervisor/conf.d/${service_name}.conf"
 supervisor_template="${deploy_dir}/supervisor/bar.conf"
 nginx_template="${deploy_dir}/nginx/bar.conf"
 gunicorn_socket="/tmp/gunicorn-${service_name}.sock"
-service_user=""
 
 first_install=false
 
@@ -233,6 +206,7 @@ if [ ! -d "$app_dir" ]; then
 fi
 
 log_step "Preparando estructura para ${service_name}"
+validate_service_user
 mkdir -p "$ruta_base"
 
 if [ "$first_install" = true ]; then
@@ -245,8 +219,6 @@ else
     echo "La carpeta ${app_dir} ya existe. Se reutilizara para completar o rehacer la configuracion."
 fi
 
-service_user="$(resolve_service_user)"
-validate_service_user
 echo "Usuario configurado para Supervisor: ${service_user}"
 
 mkdir -p "$logs_dir"
@@ -276,6 +248,7 @@ EOF
     write_env_var "BAR_PROJECT_DIR" "$app_dir"
     write_env_var "BAR_VENV_DIR" "$venv_dir"
     write_env_var "BAR_ENV_FILE" "$env_file"
+    write_env_var "BAR_SERVICE_USER" "$service_user"
     write_env_var "BAR_GUNICORN_APP" "${django_module}.wsgi:application"
     write_env_var "BAR_SECRET_KEY" "${BAR_SECRET_KEY:-cambia-esta-clave-por-una-larga-y-unica}"
     write_env_var "BAR_DB_ENGINE" "${BAR_DB_ENGINE:-django.db.backends.mysql}"
