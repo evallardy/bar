@@ -81,6 +81,31 @@ render_template() {
         "$template_path" > "$output_path"
 }
 
+resolve_service_user() {
+    if [ -n "${BAR_SERVICE_USER:-}" ]; then
+        printf '%s\n' "$BAR_SERVICE_USER"
+        return
+    fi
+
+    local candidate=""
+
+    if [ -d "$app_dir" ]; then
+        candidate="$(stat -c '%U' "$app_dir" 2>/dev/null || true)"
+    fi
+
+    if [ -z "$candidate" ] || [ "$candidate" = "root" ]; then
+        if [ -d "$ruta_base" ]; then
+            candidate="$(stat -c '%U' "$ruta_base" 2>/dev/null || true)"
+        fi
+    fi
+
+    if [ -z "$candidate" ] || [ "$candidate" = "root" ]; then
+        candidate="${SUDO_USER:-${USER:-root}}"
+    fi
+
+    printf '%s\n' "$candidate"
+}
+
 show_generated_file() {
     local label="$1"
     local file_path="$2"
@@ -120,15 +145,12 @@ deploy_template_file() {
 case "$ambiente" in
     desarrollo)
         ruta_base="/home/desarrollo"
-        service_user="${BAR_SERVICE_USER:-www-data}"
         ;;
     calidad)
         ruta_base="/home/calidad"
-        service_user="${BAR_SERVICE_USER:-www-data}"
         ;;
     produccion)
         ruta_base="/home/produccion"
-        service_user="${BAR_SERVICE_USER:-www-data}"
         ;;
     *)
         echo "El ambiente debe ser desarrollo, calidad o produccion."
@@ -171,6 +193,7 @@ supervisor_conf="/etc/supervisor/conf.d/${service_name}.conf"
 supervisor_template="${deploy_dir}/supervisor/bar.conf"
 nginx_template="${deploy_dir}/nginx/bar.conf"
 gunicorn_socket="/tmp/gunicorn-${service_name}.sock"
+service_user="$(resolve_service_user)"
 
 first_install=false
 
@@ -179,6 +202,7 @@ if [ ! -d "$app_dir" ]; then
 fi
 
 log_step "Preparando estructura para ${service_name}"
+echo "Usuario configurado para Supervisor: ${service_user}"
 mkdir -p "$ruta_base"
 
 if [ "$first_install" = true ]; then

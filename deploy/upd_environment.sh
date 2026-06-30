@@ -53,6 +53,31 @@ render_template() {
         "$template_path" > "$output_path"
 }
 
+resolve_service_user() {
+    if [ -n "${BAR_SERVICE_USER:-}" ]; then
+        printf '%s\n' "$BAR_SERVICE_USER"
+        return
+    fi
+
+    local candidate=""
+
+    if [ -d "$app_dir" ]; then
+        candidate="$(stat -c '%U' "$app_dir" 2>/dev/null || true)"
+    fi
+
+    if [ -z "$candidate" ] || [ "$candidate" = "root" ]; then
+        if [ -d "$ruta_base" ]; then
+            candidate="$(stat -c '%U' "$ruta_base" 2>/dev/null || true)"
+        fi
+    fi
+
+    if [ -z "$candidate" ] || [ "$candidate" = "root" ]; then
+        candidate="${SUDO_USER:-${USER:-root}}"
+    fi
+
+    printf '%s\n' "$candidate"
+}
+
 trap 'on_error ${LINENO}' ERR
 trap on_exit EXIT
 
@@ -99,6 +124,7 @@ nginx_available="/etc/nginx/sites-available/${service_name}.conf"
 nginx_enabled="/etc/nginx/sites-enabled/${service_name}.conf"
 supervisor_template="${deploy_dir}/supervisor/bar.conf"
 nginx_template="${deploy_dir}/nginx/bar.conf"
+service_user="$(resolve_service_user)"
 
 if [ ! -d "$app_dir" ]; then
     echo "No existe la carpeta ${app_dir}."
@@ -133,7 +159,6 @@ set -a
 . "$env_file"
 set +a
 
-service_user="${BAR_SERVICE_USER:-www-data}"
 gunicorn_socket="${BAR_GUNICORN_BIND#unix:}"
 server_names="${BAR_ALLOWED_HOSTS//,/ }"
 
