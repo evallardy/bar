@@ -170,7 +170,7 @@ nginx_enabled="/etc/nginx/sites-enabled/${service_name}.conf"
 supervisor_conf="/etc/supervisor/conf.d/${service_name}.conf"
 supervisor_template="${deploy_dir}/supervisor/bar.conf"
 nginx_template="${deploy_dir}/nginx/bar.conf"
-gunicorn_socket="/run/gunicorn-${service_name}.sock"
+gunicorn_socket="/tmp/gunicorn-${service_name}.sock"
 
 first_install=false
 
