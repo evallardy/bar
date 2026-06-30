@@ -153,6 +153,7 @@ Qué hace:
 - toma como base las plantillas [deploy/supervisor/bar.conf](deploy/supervisor/bar.conf) y [deploy/nginx/bar.conf](deploy/nginx/bar.conf)
 - en Nginx genera un upstream con el patron `<proyecto>conn` apuntando al socket de Gunicorn
 - despliega los `.conf` finales en `/etc/supervisor/conf.d/` y `/etc/nginx/sites-available/`
+- la plantilla generada por el shell deja el sitio listo en HTTP; para HTTPS todavia debes ejecutar Certbot o desplegar una configuracion SSL
 
 Si el script se detiene avisando placeholders, edita `deploy/.env.deploy` y vuelve a ejecutarlo.
 
