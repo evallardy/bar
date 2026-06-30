@@ -362,9 +362,23 @@ fi
 EOF
 chmod +x "$status_script"
 
+log_step "Desplegando configuracion de Supervisor desde plantilla"
+deploy_template_file "ARCHIVO SUPERVISOR" "$supervisor_template" "$supervisor_conf"
+
+chmod +x "${app_dir}/deploy/gunicorn_start.sh"
+chmod +x "${app_dir}/deploy/gunicorn.sh"
+
+log_step "Desplegando configuracion de Nginx desde plantilla"
+deploy_template_file "ARCHIVO NGINX" "$nginx_template" "$nginx_available"
+
+ln -sf "$nginx_available" "$nginx_enabled"
+echo "Enlace Nginx habilitado: ${nginx_enabled} -> ${nginx_available}"
+
 if grep -q "cambia-esta-" "$env_file"; then
     echo "Se creo ${env_file} con placeholders."
     echo "Busca el bloque 'INICIO VARIABLES OBLIGATORIAS PARA EDITAR A MANO'."
+    echo "Los archivos de Supervisor y Nginx ya fueron generados en /etc/."
+    echo "No se reiniciaran servicios hasta que completes las variables obligatorias."
     echo "Edita BAR_SECRET_KEY y BAR_DB_PASSWORD, luego vuelve a ejecutar el mismo comando."
     exit 2
 fi
@@ -377,18 +391,6 @@ log_step "Ejecutando migraciones y validaciones"
 python manage.py migrate --settings="$settings_module"
 python manage.py collectstatic --noinput --settings="$settings_module"
 python manage.py check --settings="$settings_module"
-
-log_step "Desplegando configuracion de Supervisor desde plantilla"
-deploy_template_file "ARCHIVO SUPERVISOR" "$supervisor_template" "$supervisor_conf"
-
-chmod +x "${app_dir}/deploy/gunicorn_start.sh"
-chmod +x "${app_dir}/deploy/gunicorn.sh"
-
-log_step "Desplegando configuracion de Nginx desde plantilla"
-deploy_template_file "ARCHIVO NGINX" "$nginx_template" "$nginx_available"
-
-ln -sf "$nginx_available" "$nginx_enabled"
-echo "Enlace Nginx habilitado: ${nginx_enabled} -> ${nginx_available}"
 
 log_step "Recargando servicios"
 sudo supervisorctl reread
