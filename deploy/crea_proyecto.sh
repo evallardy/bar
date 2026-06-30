@@ -106,6 +106,15 @@ resolve_service_user() {
     printf '%s\n' "$candidate"
 }
 
+validate_service_user() {
+    if [ "$service_user" = "root" ] && [ -z "${BAR_SERVICE_USER:-}" ]; then
+        echo "No se pudo inferir un usuario valido para Supervisor."
+        echo "Ejecuta el shell indicando BAR_SERVICE_USER, por ejemplo:"
+        echo "BAR_SERVICE_USER=iagevm $0 $ambiente $proyecto $dominio_entrada"
+        exit 1
+    fi
+}
+
 show_generated_file() {
     local label="$1"
     local file_path="$2"
@@ -215,7 +224,7 @@ supervisor_conf="/etc/supervisor/conf.d/${service_name}.conf"
 supervisor_template="${deploy_dir}/supervisor/bar.conf"
 nginx_template="${deploy_dir}/nginx/bar.conf"
 gunicorn_socket="/tmp/gunicorn-${service_name}.sock"
-service_user="$(resolve_service_user)"
+service_user=""
 
 first_install=false
 
@@ -224,7 +233,6 @@ if [ ! -d "$app_dir" ]; then
 fi
 
 log_step "Preparando estructura para ${service_name}"
-echo "Usuario configurado para Supervisor: ${service_user}"
 mkdir -p "$ruta_base"
 
 if [ "$first_install" = true ]; then
@@ -236,6 +244,10 @@ if [ "$first_install" = true ]; then
 else
     echo "La carpeta ${app_dir} ya existe. Se reutilizara para completar o rehacer la configuracion."
 fi
+
+service_user="$(resolve_service_user)"
+validate_service_user
+echo "Usuario configurado para Supervisor: ${service_user}"
 
 mkdir -p "$logs_dir"
 touch "$logs_dir/err.log" "$logs_dir/out.log" "$logs_dir/nginx-access.log" "$logs_dir/nginx-error.log"

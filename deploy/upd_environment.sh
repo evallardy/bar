@@ -100,6 +100,15 @@ resolve_service_user() {
     printf '%s\n' "$candidate"
 }
 
+validate_service_user() {
+    if [ "$service_user" = "root" ] && [ -z "${BAR_SERVICE_USER:-}" ]; then
+        echo "No se pudo inferir un usuario valido para Supervisor."
+        echo "Ejecuta el shell indicando BAR_SERVICE_USER, por ejemplo:"
+        echo "BAR_SERVICE_USER=iagevm $0 $ambiente $proyecto"
+        exit 1
+    fi
+}
+
 trap 'on_error ${LINENO}' ERR
 trap on_exit EXIT
 
@@ -147,6 +156,7 @@ nginx_enabled="/etc/nginx/sites-enabled/${service_name}.conf"
 supervisor_template="${deploy_dir}/supervisor/bar.conf"
 nginx_template="${deploy_dir}/nginx/bar.conf"
 service_user="$(resolve_service_user)"
+validate_service_user
 
 if [ ! -d "$app_dir" ]; then
     echo "No existe la carpeta ${app_dir}."
