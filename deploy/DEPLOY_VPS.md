@@ -148,7 +148,8 @@ Qué hace:
 - recibe el dominio completo del sitio, sin asumir un sufijo fijo
 - genera `migracion.sh`, `collectstatic.sh`, `restart.sh` y `status.sh` en la raíz del proyecto
 - usa `deploy/gunicorn_start.sh` para arrancar con `<modulo_proyecto>.settings_prod`
-- genera archivos de Supervisor y Nginx coherentes con ese entorno
+- toma como base las plantillas [deploy/supervisor/bar.conf](deploy/supervisor/bar.conf) y [deploy/nginx/bar.conf](deploy/nginx/bar.conf)
+- despliega los `.conf` finales en `/etc/supervisor/conf.d/` y `/etc/nginx/sites-available/`
 
 Si el script se detiene avisando placeholders, edita `deploy/.env.deploy` y vuelve a ejecutarlo.
 
@@ -165,6 +166,7 @@ Qué hace:
 - actualiza dependencias del virtualenv
 - carga `deploy/.env.deploy`
 - ejecuta `migrate`, `collectstatic` y `check` con el modulo Django del proyecto
+- vuelve a desplegar Supervisor y Nginx desde las plantillas del repo
 - reinicia Supervisor y recarga Nginx
 
 ## 10. Comandos útiles

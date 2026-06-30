@@ -55,18 +55,43 @@ write_env_var() {
     printf '%s=%q\n' "$key" "$value" >> "$env_file"
 }
 
+escape_sed_replacement() {
+    printf '%s' "$1" | sed -e 's/[&|]/\\&/g'
+}
+
+render_template() {
+    local template_path="$1"
+    local output_path="$2"
+
+    if [ ! -f "$template_path" ]; then
+        echo "No existe la plantilla ${template_path}."
+        exit 1
+    fi
+
+    sed \
+        -e "s|__SERVICE_NAME__|$(escape_sed_replacement "$service_name")|g" \
+        -e "s|__SERVICE_USER__|$(escape_sed_replacement "$service_user")|g" \
+        -e "s|__APP_DIR__|$(escape_sed_replacement "$app_dir")|g" \
+        -e "s|__VENV_DIR__|$(escape_sed_replacement "$venv_dir")|g" \
+        -e "s|__ENV_FILE__|$(escape_sed_replacement "$env_file")|g" \
+        -e "s|__LOGS_DIR__|$(escape_sed_replacement "$logs_dir")|g" \
+        -e "s|__SERVER_NAMES__|$(escape_sed_replacement "$server_names")|g" \
+        -e "s|__GUNICORN_SOCKET__|$(escape_sed_replacement "$gunicorn_socket")|g" \
+        "$template_path" > "$output_path"
+}
+
 case "$ambiente" in
     desarrollo)
         ruta_base="/home/desarrollo"
-        service_user="${BAR_SERVICE_USER:-desarrollo}"
+        service_user="${BAR_SERVICE_USER:-www-data}"
         ;;
     calidad)
         ruta_base="/home/calidad"
-        service_user="${BAR_SERVICE_USER:-calidad}"
+        service_user="${BAR_SERVICE_USER:-www-data}"
         ;;
     produccion)
         ruta_base="/home/produccion"
-        service_user="${BAR_SERVICE_USER:-produccion}"
+        service_user="${BAR_SERVICE_USER:-www-data}"
         ;;
     *)
         echo "El ambiente debe ser desarrollo, calidad o produccion."
@@ -105,7 +130,9 @@ status_script="${app_dir}/status.sh"
 nginx_available="/etc/nginx/sites-available/${service_name}.conf"
 nginx_enabled="/etc/nginx/sites-enabled/${service_name}.conf"
 supervisor_conf="/etc/supervisor/conf.d/${service_name}.conf"
-gunicorn_socket="/tmp/gunicorn-${service_name}.sock"
+supervisor_template="${deploy_dir}/supervisor/bar.conf"
+nginx_template="${deploy_dir}/nginx/bar.conf"
+gunicorn_socket="/run/gunicorn-${service_name}.sock"
 
 first_install=false
 
@@ -291,59 +318,13 @@ python manage.py migrate --settings="$settings_module"
 python manage.py collectstatic --noinput --settings="$settings_module"
 python manage.py check --settings="$settings_module"
 
-log_step "Generando configuracion de Supervisor"
-cat > "$supervisor_conf" <<EOF
-[program:${service_name}]
-directory=/
-command=/bin/bash -lc 'cd "${app_dir}" && exec /bin/bash "${app_dir}/deploy/gunicorn_start.sh"'
-autostart=true
-autorestart=true
-stopasgroup=true
-killasgroup=true
-stderr_logfile=${logs_dir}/err.log
-stdout_logfile=${logs_dir}/out.log
-user=${service_user}
-environment=LANG="en_US.UTF-8",LC_ALL="en_US.UTF-8",PYTHONUNBUFFERED="1",BAR_PROJECT_DIR="${app_dir}",BAR_VENV_DIR="${venv_dir}",BAR_ENV_FILE="${env_file}"
-EOF
+log_step "Desplegando configuracion de Supervisor desde plantilla"
+render_template "$supervisor_template" "$supervisor_conf"
 
 chmod +x "${app_dir}/deploy/gunicorn_start.sh"
 
-log_step "Generando configuracion de Nginx"
-cat > "$nginx_available" <<EOF
-upstream ${service_name}_upstream {
-    server unix:${gunicorn_socket} fail_timeout=0;
-}
-
-server {
-    listen 80;
-    server_name ${server_names};
-
-    client_max_body_size 10M;
-    access_log ${logs_dir}/nginx-access.log;
-    error_log ${logs_dir}/nginx-error.log;
-
-    location /static/ {
-        alias ${app_dir}/staticfiles/;
-        access_log off;
-        expires 7d;
-    }
-
-    location /media/ {
-        alias ${app_dir}/media/;
-        access_log off;
-        expires 1d;
-    }
-
-    location / {
-        include proxy_params;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header Host \$http_host;
-        proxy_redirect off;
-        proxy_pass_header Set-Cookie;
-        proxy_pass http://${service_name}_upstream;
-    }
-}
-EOF
+log_step "Desplegando configuracion de Nginx desde plantilla"
+render_template "$nginx_template" "$nginx_available"
 
 ln -sf "$nginx_available" "$nginx_enabled"
 

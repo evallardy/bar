@@ -27,6 +27,31 @@ on_exit() {
     fi
 }
 
+escape_sed_replacement() {
+    printf '%s' "$1" | sed -e 's/[&|]/\\&/g'
+}
+
+render_template() {
+    local template_path="$1"
+    local output_path="$2"
+
+    if [ ! -f "$template_path" ]; then
+        echo "No existe la plantilla ${template_path}."
+        exit 1
+    fi
+
+    sed \
+        -e "s|__SERVICE_NAME__|$(escape_sed_replacement "$service_name")|g" \
+        -e "s|__SERVICE_USER__|$(escape_sed_replacement "$service_user")|g" \
+        -e "s|__APP_DIR__|$(escape_sed_replacement "$app_dir")|g" \
+        -e "s|__VENV_DIR__|$(escape_sed_replacement "$venv_dir")|g" \
+        -e "s|__ENV_FILE__|$(escape_sed_replacement "$env_file")|g" \
+        -e "s|__LOGS_DIR__|$(escape_sed_replacement "$logs_dir")|g" \
+        -e "s|__SERVER_NAMES__|$(escape_sed_replacement "$server_names")|g" \
+        -e "s|__GUNICORN_SOCKET__|$(escape_sed_replacement "$gunicorn_socket")|g" \
+        "$template_path" > "$output_path"
+}
+
 trap 'on_error ${LINENO}' ERR
 trap on_exit EXIT
 
@@ -65,6 +90,13 @@ service_name="${proyecto}"
 app_dir="${ruta_base}/${proyecto}"
 venv_dir="${app_dir}/.venv"
 env_file="${app_dir}/deploy/.env.deploy"
+deploy_dir="${app_dir}/deploy"
+logs_dir="${app_dir}/logs"
+supervisor_conf="/etc/supervisor/conf.d/${service_name}.conf"
+nginx_available="/etc/nginx/sites-available/${service_name}.conf"
+nginx_enabled="/etc/nginx/sites-enabled/${service_name}.conf"
+supervisor_template="${deploy_dir}/supervisor/bar.conf"
+nginx_template="${deploy_dir}/nginx/bar.conf"
 
 if [ ! -d "$app_dir" ]; then
     echo "No existe la carpeta ${app_dir}."
@@ -99,12 +131,28 @@ set -a
 . "$env_file"
 set +a
 
+service_user="${BAR_SERVICE_USER:-www-data}"
+gunicorn_socket="${BAR_GUNICORN_BIND#unix:}"
+server_names="${BAR_ALLOWED_HOSTS//,/ }"
+
+if [ -z "$server_names" ]; then
+    echo "BAR_ALLOWED_HOSTS no esta definido en ${env_file}."
+    exit 1
+fi
+
 log_step "Ejecutando pasos Django"
 python manage.py migrate --settings="$settings_module"
 python manage.py collectstatic --noinput --settings="$settings_module"
 python manage.py check --settings="$settings_module"
 
+log_step "Desplegando configuracion de Supervisor y Nginx desde plantillas"
+render_template "$supervisor_template" "$supervisor_conf"
+render_template "$nginx_template" "$nginx_available"
+ln -sf "$nginx_available" "$nginx_enabled"
+
 log_step "Reiniciando servicios"
+sudo supervisorctl reread
+sudo supervisorctl update
 sudo supervisorctl restart "$service_name"
 sudo nginx -t
 sudo systemctl reload nginx
