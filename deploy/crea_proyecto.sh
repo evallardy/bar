@@ -280,9 +280,20 @@ cat > "$status_script" <<EOF
 #!/bin/bash
 set -euo pipefail
 
+PROJECT_DIR="\$(cd -- "\$(dirname -- "\${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILE="\$PROJECT_DIR/deploy/.env.deploy"
 SERVICE_NAME="${service_name}"
-GUNICORN_SOCKET="${gunicorn_socket}"
-LOGS_DIR="${logs_dir}"
+
+if [ -f "\$ENV_FILE" ]; then
+    set -a
+    . "\$ENV_FILE"
+    set +a
+fi
+
+GUNICORN_SOCKET="\${BAR_GUNICORN_BIND:-unix:${gunicorn_socket}}"
+GUNICORN_SOCKET="\${GUNICORN_SOCKET#unix:}"
+GUNICORN_ERRORLOG="\${BAR_GUNICORN_ERRORLOG:-${logs_dir}/gunicorn-error.log}"
+SUPERVISOR_STDERR="${logs_dir}/err.log"
 
 echo "=== Supervisor ==="
 sudo supervisorctl status "\$SERVICE_NAME"
@@ -298,7 +309,18 @@ else
 fi
 echo ""
 echo "=== Ultimas lineas Gunicorn ==="
-tail -n 20 "\$LOGS_DIR/gunicorn-error.log" || true
+if [ -f "\$GUNICORN_ERRORLOG" ]; then
+    tail -n 20 "\$GUNICORN_ERRORLOG"
+else
+    echo "No existe el log de Gunicorn \$GUNICORN_ERRORLOG"
+fi
+echo ""
+echo "=== Ultimas lineas Supervisor stderr ==="
+if [ -f "\$SUPERVISOR_STDERR" ]; then
+    tail -n 20 "\$SUPERVISOR_STDERR"
+else
+    echo "No existe el log de Supervisor \$SUPERVISOR_STDERR"
+fi
 EOF
 chmod +x "$status_script"
 
